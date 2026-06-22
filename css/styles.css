@@ -832,6 +832,24 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
 .canvas-wrap.drag .dropzone { color: var(--accent); }
 .canvas-wrap.drag .dropzone-icon { transform: scale(1.1); }
 
+.text-link {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.text-link:hover { color: var(--accent); }
+.text-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
 .video-thumb {
   margin-top: 8px;
   display: inline-flex;
@@ -1120,6 +1138,16 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
 }
 .thumb-rainbow-vertical {
   background: linear-gradient(90deg, #ff5577, #ffaa55, #ffee55, #88ff77, #55aaff, #aa77ff);
+}
+.thumb-unsplash {
+  background:
+    radial-gradient(circle at 72% 32%, #f4c75a 0 4px, transparent 4.5px),
+    linear-gradient(180deg, #5b8aab 0% 55%, #2e5739 55% 100%);
+}
+.test-image-option-wide {
+  grid-column: 1 / -1;
+  width: calc(50% - 4px);
+  justify-self: center;
 }
 .crop-size-readout {
   color: var(--muted);

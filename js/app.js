@@ -9,7 +9,7 @@ import {
 } from "./imagework.js?v=32";
 import { fitCanvasToContainer, render, drawActiveSafeZone, drawFocalSectionCircle, safeZonePosition } from "./overlay.js?v=44";
 import { triggerDownload, suggestFilename } from "./compress.js?v=32";
-import { encodeJpegInWorker } from "./encode-client.js?v=1";
+import { encodeWebpInWorker } from "./encode-client.js?v=2";
 
 const $ = (id) => document.getElementById(id);
 const MAX_RECOMMENDED_LONGEST_SIDE = 2000;
@@ -420,6 +420,7 @@ const els = {
   infoModal: $("info-modal"),
   canvasWrap: $("canvas-wrap"),
   uploadBtn: $("upload-btn"),
+  testImageLink: $("test-image-link"),
   fileInput: $("file-input"),
   clearImageRow: $("clear-image-row"),
   clearImage: $("clear-image"),
@@ -835,7 +836,7 @@ function updateOutputMeta() {
 
 function updateDownloadLabel() {
   if (!els.download) return;
-  els.download.textContent = state.usingSource ? "Download original" : "Download optimized JPEG";
+  els.download.textContent = state.usingSource ? "Download original" : "Download optimized WebP";
 }
 
 function outputIntrinsicDimensions() {
@@ -1077,16 +1078,35 @@ async function handleFile(file) {
   }
 }
 
+// Remote images (e.g. the random photo) download over the network, so switch to the
+// interface and show the spinner up front — the user sees their pick took effect
+// immediately instead of staring at the landing page until the bytes arrive.
+function showLoadingInterface() {
+  els.emptyState.hidden = true;
+  els.layout.classList.add("has-image");
+  setPreviewLoading(true);
+}
+
+function restoreLandingAfterFailedLoad() {
+  setPreviewLoading(false);
+  if (!state.image) {
+    els.layout.classList.remove("has-image");
+    els.emptyState.hidden = false;
+  }
+}
+
 async function handleUrl(url) {
   clearError();
   if (!url) return;
   const gen = ++loadGeneration;
+  showLoadingInterface();
   try {
     const image = await loadFromUrl(url);
     if (gen !== loadGeneration) return;
     await applyImage(image);
   } catch (err) {
     if (gen !== loadGeneration) return;
+    restoreLandingAfterFailedLoad();
     showError(err.message || String(err));
   }
 }
@@ -1182,8 +1202,12 @@ function wireTestImageModal() {
       const kind = optionBtn.dataset.testKind;
       close();
       try {
-        const file = await generateTestImage(kind);
-        handleFile(file);
+        if (kind === "unsplash") {
+          attemptUrlLoad(randomUnsplashUrl());
+        } else {
+          const file = await generateTestImage(kind);
+          handleFile(file);
+        }
       } catch (err) {
         showError(err.message || String(err));
       }
@@ -1256,6 +1280,31 @@ const TEST_IMAGE_SOLID_FILLS = {
   blue: "#0000ff",
 };
 
+// Genuine Unsplash photos served from the CORS-enabled images.unsplash.com CDN, which
+// is Imgix-backed so we can resize to a large landscape on the fly. Unsplash retired the
+// keyless source.unsplash.com random endpoint, so we pick at random from a curated set of
+// stable photo IDs instead. The cache-buster also defeats attemptUrlLoad()'s duplicate-URL
+// guard so repeat clicks keep loading fresh photos.
+const UNSPLASH_PHOTO_IDS = [
+  "photo-1506905925346-21bda4d32df4",
+  "photo-1469474968028-56623f02e42e",
+  "photo-1470071459604-3b5ec3a7fe05",
+  "photo-1447752875215-b2761acb3c5d",
+  "photo-1441974231531-c6227db76b6e",
+  "photo-1501785888041-af3ef285b470",
+  "photo-1505765050516-f72dcac9c60e",
+  "photo-1426604966848-d7adac402bff",
+  "photo-1472214103451-9374bd1c798e",
+  "photo-1518495973542-4542c06a5843",
+  "photo-1500534623283-312aade485b7",
+  "photo-1490604001847-b712b0c2f967",
+];
+
+function randomUnsplashUrl() {
+  const id = UNSPLASH_PHOTO_IDS[Math.floor(Math.random() * UNSPLASH_PHOTO_IDS.length)];
+  return `https://images.unsplash.com/${id}?w=${TEST_IMAGE_W}&h=${TEST_IMAGE_H}&fit=crop&q=80&fm=jpg&_=${Date.now()}`;
+}
+
 function paintStripes(ctx, axis, colors) {
   if (axis === "horizontal") {
     const h = TEST_IMAGE_H / colors.length;
@@ -1303,6 +1352,8 @@ function wireImageInput() {
     }
     els.fileInput.click();
   });
+
+  els.testImageLink?.addEventListener("click", openTestImageModal);
 
   els.fileInput.addEventListener("change", () => {
     const file = els.fileInput.files?.[0];
@@ -1549,8 +1600,8 @@ function wireCompression() {
     if (state.encodedBytes) {
       triggerDownload(
         state.encodedBytes,
-        suggestFilename(state.image.filename, "image/jpeg"),
-        "image/jpeg"
+        suggestFilename(state.image.filename, "image/webp"),
+        "image/webp"
       );
       return;
     }
@@ -1559,10 +1610,10 @@ function wireCompression() {
     els.download.textContent = "Encoding…";
     try {
       const imageData = cropToImageData(state.image, state.crop, state.outputW, state.outputH);
-      const bytes = await encodeJpegInWorker(imageData, state.quality);
+      const bytes = await encodeWebpInWorker(imageData, state.quality);
       state.encodedBytes = bytes;
       state.estimatedBytes = bytes.byteLength;
-      triggerDownload(bytes, suggestFilename(state.image.filename, "image/jpeg"), "image/jpeg");
+      triggerDownload(bytes, suggestFilename(state.image.filename, "image/webp"), "image/webp");
       updateSizeEstimate();
     } catch (err) {
       showError(`Encoding failed: ${err.message || err}`);
@@ -1619,7 +1670,7 @@ async function runEstimate() {
   const gen = estimateGeneration;
   try {
     const imageData = cropToImageData(state.image, state.crop, state.outputW, state.outputH);
-    const bytes = await encodeJpegInWorker(imageData, state.quality);
+    const bytes = await encodeWebpInWorker(imageData, state.quality);
     if (gen !== estimateGeneration) return;
     const isFullSize = !state.hasManualCrop &&
       state.outputW >= state.image.width &&
@@ -1634,7 +1685,7 @@ async function runEstimate() {
     } else {
       state.estimatedBytes = bytes.byteLength;
       state.encodedBytes = bytes;
-      const blob = new Blob([bytes], { type: "image/jpeg" });
+      const blob = new Blob([bytes], { type: "image/webp" });
       const bitmap = await createImageBitmap(blob);
       if (gen !== estimateGeneration) {
         bitmap.close?.();

@@ -2,7 +2,7 @@ let encodePromise = null;
 
 function loadEncoder() {
   if (!encodePromise) {
-    encodePromise = import("https://esm.sh/@jsquash/jpeg@1?bundle").then(
+    encodePromise = import("https://esm.sh/@jsquash/webp@1?bundle").then(
       (mod) => mod.encode
     );
   }

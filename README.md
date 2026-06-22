@@ -1,6 +1,6 @@
 # Background Image Helper
 
-A single-page tool for prepping background images for [ENgrid](https://github.com/4site-interactive-studios/engrid) form layouts. Drop an image in, pick a preset for the campaign, and the app visualizes how the form will sit on top of it across viewports — then exports an optimized JPEG ready for upload.
+A single-page tool for prepping background images for [ENgrid](https://github.com/4site-interactive-studios/engrid) form layouts. Drop an image in, pick a preset for the campaign, and the app visualizes how the form will sit on top of it across viewports — then exports an optimized WebP ready for upload.
 
 ## What it does
 
@@ -10,7 +10,7 @@ A single-page tool for prepping background images for [ENgrid](https://github.co
 - Draws **warm zone bands** (five 30 px steps) on either side of the safe zone, previewing how the image holds up as the form's edge moves at different viewport widths.
 - Auto-picks the highest-contrast color from a fixed 6-color palette (red, orange, yellow, green, blue, indigo), or lets you cycle through them manually.
 - Re-crops to the chosen focal point (Left/Center/Right × Top/Center/Bottom) with arrow-key nudging.
-- Exports as JPEG with selectable max resolution and quality, encoded off the main thread in a Web Worker.
+- Exports as WebP with selectable max resolution and quality, encoded off the main thread in a Web Worker.
 - Side-by-side **Compare** view of source vs. output.
 
 ## Presets
@@ -103,8 +103,8 @@ js/
   imagework.js          # decode, crop math, source-image setup
   overlay.js            # canvas rendering — safe zone, warm bands, focal circle
   compress.js           # download trigger, filename suggestion
-  encode-client.js      # main-thread side of JPEG encoding
-  encode-worker.js      # Web Worker — actual JPEG encode
+  encode-client.js      # main-thread side of WebP encoding
+  encode-worker.js      # Web Worker — actual WebP encode
   storage.js            # localStorage persistence (settings + per-image state)
 assets/                 # logo, favicons, overview video
 .claude/launch.json     # dev-server config

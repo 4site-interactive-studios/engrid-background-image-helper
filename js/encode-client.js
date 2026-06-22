@@ -11,7 +11,7 @@ function rejectAllPending(message) {
 
 function getWorker() {
   if (worker) return worker;
-  worker = new Worker(new URL("./encode-worker.js?v=1", import.meta.url), { type: "module" });
+  worker = new Worker(new URL("./encode-worker.js?v=2", import.meta.url), { type: "module" });
   worker.onmessage = (e) => {
     const { id, ok, bytes, error } = e.data || {};
     const entry = pending.get(id);
@@ -37,7 +37,7 @@ function getWorker() {
   return worker;
 }
 
-export function encodeJpegInWorker(imageData, quality) {
+export function encodeWebpInWorker(imageData, quality) {
   return new Promise((resolve, reject) => {
     const id = ++nextId;
     pending.set(id, { resolve, reject });

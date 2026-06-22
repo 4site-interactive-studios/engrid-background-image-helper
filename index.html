@@ -8,7 +8,7 @@
   <link rel="icon" href="assets/favicon-192x192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
   <meta name="msapplication-TileImage" content="assets/ms-tile-icon.png" />
-  <link rel="stylesheet" href="css/styles.css?v=43" />
+  <link rel="stylesheet" href="css/styles.css?v=47" />
 </head>
 <body>
   <main class="layout">
@@ -93,7 +93,7 @@
           </label>
         </div>
 
-        <button type="button" id="download" class="primary" disabled>Download optimized JPEG</button>
+        <button type="button" id="download" class="primary" disabled>Download optimized WebP</button>
         <p class="clear-image-row" id="clear-image-row" hidden><button type="button" id="clear-image"><svg class="trash-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6.5 1.5h3a1 1 0 0 1 1 1V3H13a.5.5 0 0 1 0 1h-.54l-.65 9.06A2 2 0 0 1 9.81 15H6.19a2 2 0 0 1-1.99-1.94L3.54 4H3a.5.5 0 0 1 0-1h2.5v-.5a1 1 0 0 1 1-1Zm0 1.5V3h3v-.5h-3ZM4.55 4l.64 8.99a1 1 0 0 0 1 .94h3.62a1 1 0 0 0 1-.94L11.45 4h-6.9ZM7 6.5a.5.5 0 0 1 1 0v5a.5.5 0 0 1-1 0v-5Zm2 0a.5.5 0 0 1 1 0v5a.5.5 0 0 1-1 0v-5Z" fill="currentColor"/></svg>Clear image</button></p>
       </fieldset>
     </section>
@@ -120,6 +120,7 @@
               <span class="video-thumb-play" aria-hidden="true">▶</span>
               <span class="video-thumb-label">Watch overview</span>
             </button>
+            <button type="button" id="test-image-link" class="text-link">Use a test image</button>
           </div>
         </div>
         <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp" hidden />
@@ -208,10 +209,11 @@
         <button type="button" class="test-image-option" data-test-kind="bw-horizontal"><span class="test-image-thumb thumb-bw-horizontal"></span><span>B/W horizontal stripes</span></button>
         <button type="button" class="test-image-option" data-test-kind="rainbow-vertical"><span class="test-image-thumb thumb-rainbow-vertical"></span><span>Rainbow vertical stripes</span></button>
         <button type="button" class="test-image-option" data-test-kind="rainbow-horizontal"><span class="test-image-thumb thumb-rainbow-horizontal"></span><span>Rainbow horizontal stripes</span></button>
+        <button type="button" class="test-image-option test-image-option-wide" data-test-kind="unsplash"><span class="test-image-thumb thumb-unsplash"></span><span>Random photo (Unsplash)</span></button>
       </div>
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=126"></script>
+  <script type="module" src="js/app.js?v=130"></script>
 </body>
 </html>
