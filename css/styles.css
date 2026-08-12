@@ -787,11 +787,24 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
   min-width: 180px;
   padding: 8px 18px;
 }
+.empty-state-content .url-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin: 10px 0 2px;
+}
+.empty-state-content .url-row-label {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.2;
+}
 .empty-state-content input[type="url"] {
   width: min(100%, 420px);
   max-width: 100%;
-  margin-top: 2px;
   text-align: center;
+  font-size: 12px;
 }
 
 .dropzone {

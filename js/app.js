@@ -22,6 +22,7 @@ const PRESETS = [
   { id: "oceana-left", name: "Oceana - Left", layout: "left", formWidth: 680, safeZoneWidth: 350 },
   { id: "ran-left", name: "RAN - Left", layout: "left", formWidth: 680, safeZoneWidth: 300 },
   { id: "shatterproof-left", name: "Shatterproof - Left", layout: "left", formWidth: 640, safeZoneWidth: 350 },
+  { id: "tpl-left", name: "TPL - Left", layout: "left", formWidth: 768, safeZoneWidth: 350 },
   { id: "wwf-center", name: "WWF - Center", layout: "center", formWidth: 1200, safeZoneWidth: 1200 },
 ];
 
@@ -33,6 +34,10 @@ const CLIENT_URL_PATTERNS = [
   {
     pattern: "https://acb0a5d73b67fccd4bbe-c2d8138f0ea10a18dd4c43ec3aa4240a.ssl.cf5.rackcdn.com/10033/",
     presetIds: ["nwf-left"],
+  },
+  {
+    pattern: "https://bd6ca9cefa6fb6e0adf1-c2f9aa1adb9f60a775f60074e4c86031.ssl.cf5.rackcdn.com/20002/",
+    presetIds: ["tpl-left"],
   },
 ];
 
@@ -421,6 +426,7 @@ const els = {
   canvasWrap: $("canvas-wrap"),
   uploadBtn: $("upload-btn"),
   testImageLink: $("test-image-link"),
+  imageUrl: $("image-url"),
   fileInput: $("file-input"),
   clearImageRow: $("clear-image-row"),
   clearImage: $("clear-image"),
@@ -1055,6 +1061,8 @@ function handleClearImage() {
   updateFocalAttributeHint();
   syncCompareUi();
   els.layout.classList.remove("has-image");
+  if (els.imageUrl) els.imageUrl.value = "";
+  clearTimeout(urlInputTimer);
   lastTriedUrl = null;
   clearError();
   syncOutputAndQualityToInputs();
@@ -1379,6 +1387,23 @@ function wireImageInput() {
   });
 
   els.clearImage.addEventListener("click", handleClearImage);
+
+  // The URL field is the deliberate path for client asset URLs: attemptUrlLoad() matches
+  // the prefix against CLIENT_URL_PATTERNS, so pre-selecting the client preset happens
+  // before the image lands. Debounced so a typed/pasted URL loads without pressing Enter.
+  els.imageUrl?.addEventListener("input", () => {
+    clearTimeout(urlInputTimer);
+    const v = els.imageUrl.value.trim();
+    if (/^https?:\/\/\S+\.\S+/i.test(v)) {
+      urlInputTimer = setTimeout(() => attemptUrlLoad(v), 600);
+    }
+  });
+  els.imageUrl?.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    clearTimeout(urlInputTimer);
+    attemptUrlLoad(els.imageUrl.value.trim());
+  });
 
   document.addEventListener("paste", (e) => {
     const target = e.target;

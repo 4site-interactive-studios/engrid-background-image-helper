@@ -4,7 +4,7 @@ A single-page tool for prepping background images for [ENgrid](https://github.co
 
 ## What it does
 
-- Loads an image via **drop, click, or paste** (JPEG / PNG / WebP).
+- Loads an image via **drop, click, paste, or URL** (JPEG / PNG / WebP). The landing page has an image-URL field — type or paste a URL there and it loads (debounced, or press Enter), matching the client's CDN prefix to auto-select their preset.
 - Overlays a **safe zone** — the vertical column the form sits over — sized to a campaign preset or a custom width.
 - Marks a **focal section indicator** (dashed circle) showing where the focal point lands inside the safe zone.
 - Draws **warm zone bands** (five 30 px steps) on either side of the safe zone, previewing how the image holds up as the form's edge moves at different viewport widths.
@@ -23,6 +23,7 @@ A single-page tool for prepping background images for [ENgrid](https://github.co
 | Oceana - Left | Left | 680 | 350 |
 | RAN - Left | Left | 680 | 300 |
 | Shatterproof - Left | Left | 640 | 350 |
+| TPL - Left | Left | 768 | 350 |
 | WWF - Center | Center | 1200 | 1200 |
 | Custom | any | any | any |
 
@@ -32,12 +33,13 @@ Custom mode unlocks the form-width and safe-zone inputs.
 
 ### Smart preset selection
 
-When an image URL is pasted (or passed via `?src=`), the URL is matched against a list of known client CDN prefixes (`CLIENT_URL_PATTERNS` in `js/app.js`). On match, the client's preset is auto-selected and the dropdown is filtered to show only that client's preset + Custom. Currently mapped:
+When an image URL is entered in the landing page's **image URL** field, pasted anywhere on the page, or passed via `?src=`, the URL is matched against a list of known client CDN prefixes (`CLIENT_URL_PATTERNS` in `js/app.js`). On match, the client's preset is auto-selected and the dropdown is filtered to show only that client's preset + Custom, before the image finishes loading. Currently mapped:
 
 | URL prefix | Preset |
 |---|---|
 | `https://c27fdabe952dfc357fe25ebf5c8897ee.ssl.cf5.rackcdn.com/1839/` | AIUSA - Left |
 | `https://acb0a5d73b67fccd4bbe-c2d8138f0ea10a18dd4c43ec3aa4240a.ssl.cf5.rackcdn.com/10033/` | NWF - Left |
+| `https://bd6ca9cefa6fb6e0adf1-c2f9aa1adb9f60a775f60074e4c86031.ssl.cf5.rackcdn.com/20002/` | TPL - Left |
 
 For first-time users (nothing persisted in localStorage), uploading an image with no client URL match defaults to **Custom** rather than the displayed default. Once a user picks any preset, that choice sticks for future sessions.
 

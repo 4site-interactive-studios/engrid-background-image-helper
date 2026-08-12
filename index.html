@@ -8,7 +8,7 @@
   <link rel="icon" href="assets/favicon-192x192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
   <meta name="msapplication-TileImage" content="assets/ms-tile-icon.png" />
-  <link rel="stylesheet" href="css/styles.css?v=47" />
+  <link rel="stylesheet" href="css/styles.css?v=48" />
 </head>
 <body>
   <main class="layout">
@@ -25,6 +25,7 @@
             <option value="oceana-left">Oceana - Left</option>
             <option value="ran-left">RAN - Left</option>
             <option value="shatterproof-left">Shatterproof - Left</option>
+            <option value="tpl-left">TPL - Left</option>
             <option value="wwf-center">WWF - Center</option>
             <option value="custom">Custom</option>
           </select>
@@ -116,6 +117,10 @@
               </svg>
               <span class="dropzone-text"><strong>Drop</strong>, <strong>click</strong>, or <strong>paste</strong></span>
             </button>
+            <label class="url-row">
+              <span class="url-row-label">or paste an image URL</span>
+              <input type="url" id="image-url" placeholder="https://example.com/photo.jpg" autocomplete="off" spellcheck="false" />
+            </label>
             <button type="button" id="video-thumb" class="video-thumb" aria-label="Watch overview video">
               <span class="video-thumb-play" aria-hidden="true">▶</span>
               <span class="video-thumb-label">Watch overview</span>
@@ -214,6 +219,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=130"></script>
+  <script type="module" src="js/app.js?v=131"></script>
 </body>
 </html>
