@@ -6,7 +6,7 @@ import {
   clampCrop,
   cropToImageData,
   formatBytes,
-} from "./imagework.js?v=32";
+} from "./imagework.js?v=33";
 import { fitCanvasToContainer, render, drawActiveSafeZone, drawFocalSectionCircle, safeZonePosition } from "./overlay.js?v=44";
 import { triggerDownload, suggestFilename } from "./compress.js?v=32";
 import { encodeWebpInWorker } from "./encode-client.js?v=2";

@@ -48,25 +48,35 @@ export async function loadFromFile(file) {
   return { ...decoded, hash };
 }
 
+// Public image proxy that mirrors any fetchable image with CORS headers added.
+// Needed because common client hosts (e.g. Engaging Networks' rackcdn image
+// library) serve images without Access-Control-Allow-Origin, so the browser
+// blocks every direct read from this page.
+const CORS_PROXY_PREFIX = "https://images.weserv.nl/?url=";
+
+async function fetchImageBytes(url) {
+  const res = await fetch(url, { mode: "cors" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const mimeType = res.headers.get("content-type") || "";
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  return { bytes, mimeType };
+}
+
+async function decodeFetchedBytes(bytes, mimeType, sourceUrl) {
+  const hash = await hashBytes(bytes);
+  const filename = sourceUrl.split("/").pop().split("?")[0] || "image";
+  const decoded = await decodeBytes(bytes, mimeType, filename);
+  return { ...decoded, hash };
+}
+
 export async function loadFromUrl(url) {
-  let bytes = null;
-  let mimeType = null;
-  let fetchErr = null;
+  let directErr = null;
 
   try {
-    const res = await fetch(url, { mode: "cors" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    mimeType = res.headers.get("content-type") || "";
-    bytes = new Uint8Array(await res.arrayBuffer());
+    const { bytes, mimeType } = await fetchImageBytes(url);
+    return await decodeFetchedBytes(bytes, mimeType, url);
   } catch (err) {
-    fetchErr = err;
-  }
-
-  if (bytes) {
-    const hash = await hashBytes(bytes);
-    const filename = url.split("/").pop().split("?")[0] || "image";
-    const decoded = await decodeBytes(bytes, mimeType, filename);
-    return { ...decoded, hash };
+    directErr = err;
   }
 
   try {
@@ -76,20 +86,13 @@ export async function loadFromUrl(url) {
     canvas.height = img.naturalHeight;
     const ctx = canvas.getContext("2d");
     ctx.drawImage(img, 0, 0);
-    let blob;
-    try {
-      blob = await new Promise((res, rej) =>
-        canvas.toBlob(
-          (b) => (b ? res(b) : rej(new Error("toBlob failed"))),
-          "image/jpeg",
-          0.95
-        )
-      );
-    } catch {
-      throw new Error(
-        "This host doesn't allow cross-origin reads. Download the image locally and drop it here."
-      );
-    }
+    const blob = await new Promise((res, rej) =>
+      canvas.toBlob(
+        (b) => (b ? res(b) : rej(new Error("toBlob failed"))),
+        "image/jpeg",
+        0.95
+      )
+    );
     const ab = await blob.arrayBuffer();
     const fallbackBytes = new Uint8Array(ab);
     const hash = await hashBytes(fallbackBytes);
@@ -104,14 +107,21 @@ export async function loadFromUrl(url) {
       byteLength: fallbackBytes.byteLength,
       hash,
     };
-  } catch (err) {
-    if (fetchErr) {
-      throw new Error(
-        "Couldn't load this URL. The host may not allow cross-origin requests. Download the image locally and drop it here."
-      );
-    }
-    throw err;
+  } catch {}
+
+  try {
+    const { bytes, mimeType } = await fetchImageBytes(
+      CORS_PROXY_PREFIX + encodeURIComponent(url)
+    );
+    return await decodeFetchedBytes(bytes, mimeType, url);
+  } catch {}
+
+  if (directErr && /^HTTP \d+$/.test(directErr.message || "")) {
+    throw new Error(`Couldn't load this URL (${directErr.message}).`);
   }
+  throw new Error(
+    "Couldn't load this URL, even through a CORS proxy. Download the image locally and drop it here."
+  );
 }
 
 export function computeCropFromFocalPoint(image, focal, outputW, outputH) {
