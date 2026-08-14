@@ -753,10 +753,11 @@ function urlParamsFromState() {
   if (!isGeneralMode() && state.focal) {
     p.set("focal", `${state.focal.x},${state.focal.y}`);
   }
-  // Crop is in source-image pixels, so it lands identically on the same image. Omitted
-  // when it is the whole frame, which is the default anyway.
+  // Crop is in source-image pixels, so it lands identically on the same image — but only
+  // travels alongside a src the recipient can fetch. Without one it would describe a frame
+  // nobody else can reach. Omitted when it is the whole image, which is the default.
   const c = state.crop;
-  if (state.image && c) {
+  if (state.image && state.imageUrl && c) {
     const r = [c.x, c.y, c.w, c.h].map(Math.round);
     const isFull = r[0] === 0 && r[1] === 0 &&
       r[2] === state.image.width && r[3] === state.image.height;
@@ -798,7 +799,7 @@ function syncUrlFromState() {
 
 // Values that can only take effect once an image exists wait here; applyImage() otherwise
 // resets max resolution and quality to their per-image defaults.
-const urlDefaults = { w: null, h: null, maxResolution: null, quality: null, crop: null, focal: null };
+const urlDefaults = { w: null, h: null, maxResolution: null, quality: null, crop: null, focal: null, src: null };
 
 function applyUrlParams(params) {
   const s = state.settings;
@@ -864,11 +865,20 @@ function applyUrlParams(params) {
     urlDefaults.focal = { x: focal[0], y: focal[1] };
   }
 
-  // Held until an image exists — the rect is meaningless without one to clamp it against.
+  // Held until an image exists — the rect is meaningless without one to clamp it against,
+  // and it is kept next to the src it describes so it can be matched against what
+  // actually loads.
+  urlDefaults.src = params.get("src");
   const crop = (params.get("crop") || "").split(",").map(Number);
   if (crop.length === 4 && crop.every((v) => Number.isFinite(v)) && crop[2] > 0 && crop[3] > 0) {
     urlDefaults.crop = { x: crop[0], y: crop[1], w: crop[2], h: crop[3] };
   }
+}
+
+// A crop is in one particular image's pixels, so it only means anything on that image.
+// Everything else in the link is a setting and carries over to whatever is loaded next.
+function urlCropAppliesToCurrentImage() {
+  return !!(urlDefaults.crop && urlDefaults.src && state.imageUrl === urlDefaults.src);
 }
 
 function persistImageState() {
@@ -1650,7 +1660,7 @@ async function applyImage(image) {
   // An explicit crop from the link is the whole point of that link, so it lands last and
   // overrides whatever framing the mode would otherwise have derived. Output follows the
   // crop unless the link also named a size.
-  if (!saved && urlDefaults.crop) {
+  if (!saved && urlCropAppliesToCurrentImage()) {
     state.crop = clampCrop(urlDefaults.crop, image);
     state.hasManualCrop = true;
     if (!(isGeneralMode() && isDimensionsSizeMode() && urlDefaults.w && urlDefaults.h)) {

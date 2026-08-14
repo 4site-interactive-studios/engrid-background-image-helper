@@ -122,6 +122,8 @@ Parameters written and read back: `src`, `crop` (`x,y,w,h` in source-image pixel
 
 `src` is written from state rather than passed through, so replacing the image replaces the link instead of stranding the previous one.
 
+`crop` is the one parameter tied to a particular image rather than being a setting: it is in that image's pixels, so it is applied only when the image that loads is the one `src` named. Open a link and then upload something of your own and every setting carries over while the crop is discarded, framing the new image fresh. For the same reason `crop` is only written alongside a `src` — without one it would describe a frame nobody else can reach.
+
 `w`/`h`, `crop`, `focal`, `maxres`, and `quality` can only take effect once an image exists, so they are held and applied on first load — `applyImage()` would otherwise reset max resolution and quality to their per-image defaults. The crop lands last and overrides whatever framing the mode would have derived, since reproducing it is the point of the link. Because those values settle late, `applyImage()` re-syncs the URL when it finishes; syncs earlier in the same load describe a frame that no longer exists. The sync is cosmetic and fully guarded, so a failure can never break the settings change that triggered it. Note it must call `window.history.replaceState` explicitly: `js/app.js` declares its own `const history` for undo/redo, which shadows the global for the whole module, and a bare `history.replaceState` there silently resolves to that object instead.
 
 ### CMD/Ctrl+click on the upload icon
