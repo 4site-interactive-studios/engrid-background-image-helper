@@ -1084,16 +1084,18 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
     position: absolute;
     inset: -60px;
     z-index: -1;
-    /* Thin enough that the colour behind reads through as tinted glass — at the old 0.55
-       flat tint the panel was effectively opaque and the field behind it was lost. Graded
-       darker toward the bottom so the smaller text there keeps its contrast. */
+    /* The face is pitched at roughly 70% of the rim's intensity: the rim boosts brightness
+       to 210%, so this takes ~145%, and the tint is light enough not to cancel it. Without
+       a brightness boost of its own the face stayed dark however thin the tint got, which
+       is what made the edge look lit and the middle look flat. Still graded darker toward
+       the bottom, where the smaller text needs the contrast. */
     background: linear-gradient(
       to bottom,
-      rgba(22, 27, 34, 0.3) 0%,
-      rgba(22, 27, 34, 0.46) 100%
+      rgba(22, 27, 34, 0.14) 0%,
+      rgba(22, 27, 34, 0.3) 100%
     );
-    -webkit-backdrop-filter: blur(34px) saturate(190%);
-    backdrop-filter: blur(34px) saturate(190%);
+    -webkit-backdrop-filter: blur(34px) brightness(145%) saturate(190%);
+    backdrop-filter: blur(34px) brightness(145%) saturate(190%);
     pointer-events: none;
   }
   .canvas-wrap.drag .card-backdrop {
