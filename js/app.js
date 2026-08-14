@@ -825,6 +825,14 @@ function applyUrlParams(params) {
   const free = params.get("free");
   if (free === "0" || free === "1") s.freeCrop = free === "1";
 
+  // Naming a ratio or a target size states the mode even without saying so outright.
+  // Without this the mode falls back to whatever was last stored locally, so a link
+  // reading ?ratio=1:1 could land in Dimensions with the dropdown out of sight.
+  if (!size) {
+    if (ratio && aspectRatioById(ratio)) s.sizeMode = "aspect";
+    else if (params.has("w") && params.has("h")) s.sizeMode = "dimensions";
+  }
+
   const retina = params.get("retina");
   if (retina === "0" || retina === "1") s.retina = retina === "1";
 

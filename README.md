@@ -120,6 +120,8 @@ When the image itself came from a link — pasted, or arriving via `?src=` — i
 
 Parameters written and read back: `src`, `crop` (`x,y,w,h` in source-image pixels), `focal` (background mode, where it places the safe zone), `mode`, `size` (`aspect`/`dimensions`), `ratio`, `free`, `w`/`h`, `retina`, `preset` (plus `layout`, `formwidth`, `safezone` when the preset is custom), `maxres`, and `quality`. `debug` is preserved rather than overwritten.
 
+A hand-written link may omit `size`: naming a `ratio` implies aspect mode and a `w`/`h` pair implies dimensions, so the mode never falls back to whatever happens to be in local storage. An explicit `size` always wins.
+
 `src` is written from state rather than passed through, so replacing the image replaces the link instead of stranding the previous one.
 
 `crop` is the one parameter tied to a particular image rather than being a setting: it is in that image's pixels, so it is applied only when the image that loads is the one `src` named. Open a link and then upload something of your own and every setting carries over while the crop is discarded, framing the new image fresh. For the same reason `crop` is only written alongside a `src` — without one it would describe a frame nobody else can reach.
