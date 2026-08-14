@@ -9,7 +9,7 @@ import {
 } from "./imagework.js?v=33";
 import { fitCanvasToContainer, render, drawActiveSafeZone, drawFocalSectionCircle, safeZonePosition, containRect, drawRuleOfThirds } from "./overlay.js?v=48";
 import { triggerDownload, suggestFilename } from "./compress.js?v=33";
-import { encodeWebpInWorker } from "./encode-client.js?v=2";
+import { encodeWebpInWorker } from "./encode-client.js?v=3";
 
 const $ = (id) => document.getElementById(id);
 const MAX_RECOMMENDED_LONGEST_SIDE = 2000;
@@ -1099,10 +1099,18 @@ function snapQualityToPreset(q) {
   return QUALITY_PRESETS[nearestPresetIndex(QUALITY_PRESETS, q)].value;
 }
 
+// Maximum quality with no resolution cap is a request for an untouched copy, so the
+// encoder switches to lossless rather than merely a very high lossy setting.
+function isLossless() {
+  return state.maxResolution === 0 && state.quality === 100;
+}
+
 function updateQualityDisplay() {
   const idx = nearestPresetIndex(QUALITY_PRESETS, state.quality);
   els.quality.value = String(idx);
-  if (els.qualityVal) els.qualityVal.textContent = QUALITY_PRESETS[idx].label;
+  if (els.qualityVal) {
+    els.qualityVal.textContent = isLossless() ? "Lossless" : QUALITY_PRESETS[idx].label;
+  }
 }
 
 function updateMaxResolutionDisplay() {
@@ -1111,6 +1119,8 @@ function updateMaxResolutionDisplay() {
     : nearestPresetIndex(MAX_RES_PRESETS.filter(p => p.value > 0), state.maxResolution);
   els.maxResolution.value = String(idx);
   if (els.maxResolutionVal) els.maxResolutionVal.textContent = MAX_RES_PRESETS[idx].label;
+  // Lossless depends on both sliders, so the quality label follows this one too.
+  updateQualityDisplay();
 }
 
 function syncCompareUi() {
@@ -2126,9 +2136,13 @@ function wireFocalAndCrop() {
 
   els.maxResolution.addEventListener("input", () => {
     const idx = clampInt(els.maxResolution.value, 0, MAX_RES_PRESETS.length - 1, 0);
+    const wasLossless = isLossless();
     state.maxResolution = MAX_RES_PRESETS[idx].value;
     updateMaxResolutionDisplay();
     if (!state.image) return;
+    // Reaching (or leaving) "No limit" at maximum quality flips the encoder between
+    // lossless and lossy, which needs a re-encode even when the dimensions don't move.
+    const losslessChanged = isLossless() !== wasLossless;
     let changed;
     if (isGeneralMode()) {
       const beforeW = state.outputW;
@@ -2145,7 +2159,7 @@ function wireFocalAndCrop() {
       rerender();
       if (modalState.active) renderModal();
       updateAutoSafeZoneColor();
-      if (changed) {
+      if (changed || losslessChanged) {
         persistImageState();
         scheduleEstimate();
       }
@@ -2288,7 +2302,7 @@ function wireCompression() {
     els.download.textContent = "Encoding…";
     try {
       const imageData = cropToImageData(state.image, state.crop, state.outputW, state.outputH);
-      const bytes = await encodeWebpInWorker(imageData, state.quality);
+      const bytes = await encodeWebpInWorker(imageData, state.quality, isLossless());
       state.encodedBytes = bytes;
       state.estimatedBytes = bytes.byteLength;
       triggerDownload(bytes, suggestFilename(state.image.filename, "image/webp", downloadSuffix()), "image/webp");
@@ -2348,12 +2362,15 @@ async function runEstimate() {
   const gen = estimateGeneration;
   try {
     const imageData = cropToImageData(state.image, state.crop, state.outputW, state.outputH);
-    const bytes = await encodeWebpInWorker(imageData, state.quality);
+    const bytes = await encodeWebpInWorker(imageData, state.quality, isLossless());
     if (gen !== estimateGeneration) return;
     const isFullSize = !state.hasManualCrop &&
       state.outputW >= state.image.width &&
       state.outputH >= state.image.height;
-    state.usingSource = isFullSize && bytes.byteLength > state.image.byteLength;
+    // Handing back the original instead of a larger re-encode is right for lossy output,
+    // but lossless is expected to exceed a JPEG source and was asked for explicitly —
+    // substituting the original there would silently ignore the request.
+    state.usingSource = !isLossless() && isFullSize && bytes.byteLength > state.image.byteLength;
     if (state.usingSource) {
       state.estimatedBytes = state.image.byteLength;
       if (state.compressedBitmap?.close) state.compressedBitmap.close();

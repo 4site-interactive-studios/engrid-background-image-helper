@@ -11,7 +11,7 @@ function rejectAllPending(message) {
 
 function getWorker() {
   if (worker) return worker;
-  worker = new Worker(new URL("./encode-worker.js?v=2", import.meta.url), { type: "module" });
+  worker = new Worker(new URL("./encode-worker.js?v=3", import.meta.url), { type: "module" });
   worker.onmessage = (e) => {
     const { id, ok, bytes, error } = e.data || {};
     const entry = pending.get(id);
@@ -37,13 +37,13 @@ function getWorker() {
   return worker;
 }
 
-export function encodeWebpInWorker(imageData, quality) {
+export function encodeWebpInWorker(imageData, quality, lossless = false) {
   return new Promise((resolve, reject) => {
     const id = ++nextId;
     pending.set(id, { resolve, reject });
     try {
       const w = getWorker();
-      w.postMessage({ id, imageData, quality });
+      w.postMessage({ id, imageData, quality, lossless });
     } catch (err) {
       pending.delete(id);
       reject(err);

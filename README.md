@@ -27,7 +27,7 @@ The mode is remembered in `localStorage` and can be deep-linked with `?mode=gene
 - Draws **warm zone bands** (five 30 px steps) on either side of the safe zone, previewing how the image holds up as the form's edge moves at different viewport widths.
 - Auto-picks the highest-contrast color from a fixed 6-color palette (red, orange, yellow, green, blue, indigo), or lets you cycle through them manually.
 - Re-crops to the chosen focal point (Left/Center/Right × Top/Center/Bottom) with arrow-key nudging.
-- Exports as WebP with selectable max resolution and quality, encoded off the main thread in a Web Worker.
+- Exports as WebP with selectable max resolution and quality, encoded off the main thread in a Web Worker. Setting **No limit** and **Maximum quality** together switches the encoder to lossless WebP at full resolution — the quality readout reads "Lossless" to make that visible. Lossless output is expected to exceed a JPEG source, so the usual "hand back the original when the re-encode is larger" substitution is skipped there; it was asked for explicitly.
 - Side-by-side **Compare** view of source vs. output.
 
 ## Presets
@@ -116,7 +116,7 @@ Changing a setting rewrites the query string in place (`history.replaceState`, n
 
 Parameters written and read back: `mode`, `size` (`aspect`/`dimensions`), `ratio`, `w`/`h`, `retina`, `preset` (plus `layout`, `formwidth`, `safezone` when the preset is custom), `maxres`, and `quality`. `src` and `debug` are preserved rather than overwritten.
 
-`w`/`h`, `maxres`, and `quality` can only take effect once an image exists, so they are held and applied on first load — `applyImage()` would otherwise reset max resolution and quality to their per-image defaults. The sync is cosmetic and fully guarded: browsers that expose no usable `history.replaceState` (some embedded and sandboxed webviews) silently skip it rather than breaking the settings change that triggered it.
+`w`/`h`, `maxres`, and `quality` can only take effect once an image exists, so they are held and applied on first load — `applyImage()` would otherwise reset max resolution and quality to their per-image defaults. The sync is cosmetic and fully guarded, so a failure can never break the settings change that triggered it. Note it must call `window.history.replaceState` explicitly: `js/app.js` declares its own `const history` for undo/redo, which shadows the global for the whole module, and a bare `history.replaceState` there silently resolves to that object instead.
 
 ### CMD/Ctrl+click on the upload icon
 
