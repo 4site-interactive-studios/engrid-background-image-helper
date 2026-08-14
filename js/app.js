@@ -1009,6 +1009,10 @@ function applyHistorySnapshot(snap) {
     hasManualCrop: state.hasManualCrop,
   });
   scheduleEstimate();
+  // This writes through saveSettings/saveImageState directly rather than the persist*
+  // wrappers, so the URL sync they perform has to happen explicitly — otherwise the link
+  // keeps describing the state that was just undone.
+  syncUrlFromState();
   history.baseline = snapshotForHistory();
   history.baselineTime = Date.now();
   history.applying = false;
@@ -1745,6 +1749,10 @@ function handleClearImage() {
   updateRatioHint();
   rerender();
   resetHistory();
+  // Nothing else here rewrites the query string — persistImageState() bails without an
+  // image — so without this the cleared image's src and crop stay in the address bar and
+  // load straight back on refresh.
+  syncUrlFromState();
 }
 
 async function handleFile(file) {
@@ -1792,6 +1800,9 @@ async function handleUrl(url) {
   try {
     const image = await loadFromUrl(url);
     if (gen !== loadGeneration) return;
+    // Only on success: recording it before the fetch left a failed URL in the address bar
+    // describing whatever image was still on screen.
+    state.imageUrl = url;
     await applyImage(image);
   } catch (err) {
     if (gen !== loadGeneration) return;
@@ -1946,9 +1957,6 @@ let loadGeneration = 0;
 function attemptUrlLoad(url) {
   if (!url || url === lastTriedUrl) return;
   lastTriedUrl = url;
-  // Recorded up front rather than on success, so the address bar keeps the link the user
-  // actually asked for even while it is still loading.
-  state.imageUrl = url;
   // Client presets configure the simulated form, which general mode doesn't have.
   if (isGeneralMode()) {
     handleUrl(url);
@@ -2704,7 +2712,9 @@ function updateCropSizeWarning(crop) {
       state.image.width >= suggestedMinW &&
       state.image.height >= suggestedMinH;
     els.cropFixBtn.hidden = !canFix;
-  } else if (max > detailCap()) {
+  // Tested against the recommendation, not detailCap(): outputW/H were already clamped to
+  // the cap by cropModalOutput*, so comparing them against it could never be true.
+  } else if (max > MAX_RECOMMENDED_LONGEST_SIDE) {
     els.cropSizeWarning.hidden = false;
     els.cropSizeWarningText.textContent = `Output is large (${outputW}×${outputH}). Recommended longest side: 1500–2000px.`;
     els.cropFixBtn.hidden = true;
