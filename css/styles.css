@@ -396,6 +396,162 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
   display: none;
 }
 
+/* Mode gating. Background-only controls collapse in general mode and vice versa;
+   general mode has no form to simulate, so nothing about safe zones or focal points applies. */
+.layout .general-only { display: none; }
+.layout.mode-general .general-only { display: grid; }
+.layout.mode-general p.general-only { display: block; }
+.layout.mode-general .general-only[hidden] { display: none; }
+.layout.mode-general .preset-row,
+.layout.mode-general .form-position-row,
+.layout.mode-general .form-width-row,
+.layout.mode-general .safe-zone-row,
+.layout.mode-general .focal-point-setting,
+.layout.mode-general #focal-attribute-hint,
+.layout.mode-general #info-btn {
+  display: none !important;
+}
+
+.mode-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 3px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.mode-toggle-btn {
+  margin: 0;
+  padding: 6px 10px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.mode-toggle-btn:hover:not(.is-active) { color: var(--text); border-color: transparent; }
+.mode-toggle-btn.is-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.mode-toggle-panel { margin-bottom: 10px; }
+.empty-state-content .mode-toggle { width: 100%; max-width: 340px; }
+
+/* The width/height pair sits inside the settings fieldset, whose labels are otherwise
+   two-column. Stack each field label-over-input and size the boxes to the five digits
+   they accept, then center the pair to match the aspect row below it. */
+.form-safezone-fieldset .row-2 {
+  grid-template-columns: auto auto;
+  justify-content: center;
+  gap: 16px;
+}
+.form-safezone-fieldset .row-2 label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.form-safezone-fieldset .row-2 input[type="number"] {
+  width: calc(5ch + 18px);
+  text-align: center;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+/* Spinners would overlap the digits at this width; arrow-key stepping still works. */
+.form-safezone-fieldset .row-2 input[type="number"]::-webkit-outer-spin-button,
+.form-safezone-fieldset .row-2 input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* You crop by dimensions or by aspect ratio, never both, so the size toggle swaps which
+   set of controls exists. Both gates live in one selector: general mode AND the chosen
+   size mode, so neither set can leak into background mode. */
+.layout .size-dimensions-only,
+.layout .size-aspect-only {
+  display: none;
+}
+.layout.mode-general.size-mode-dimensions .row-2.size-dimensions-only {
+  display: grid;
+}
+.layout.mode-general.size-mode-dimensions p.size-dimensions-only {
+  display: block;
+}
+.layout.mode-general.size-mode-dimensions .free-crop-row.size-dimensions-only {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 10px 0 0;
+}
+.layout.mode-general.size-mode-dimensions p.size-dimensions-only[hidden] {
+  display: none;
+}
+
+/* Stack the aspect label over its dropdown and center both, rather than using the
+   two-column label layout the rest of the settings fieldset uses. */
+.layout.mode-general.size-mode-aspect .aspect-ratio-row.size-aspect-only {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+.aspect-ratio-row select {
+  width: auto;
+  max-width: 100%;
+}
+
+.size-toggle {
+  gap: 4px;
+  padding: 3px;
+  margin: 10px 0;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.layout.mode-general .size-toggle.general-only {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.checkbox-wrap input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.ratio-hint {
+  margin: 2px 0 8px;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+}
+.ratio-hint code {
+  padding: 1px 4px;
+  background: var(--panel-2);
+  border-radius: 3px;
+  color: var(--text);
+}
+.ratio-hint .link-btn {
+  width: auto;
+  margin: 0;
+  padding: 1px 4px;
+  background: none;
+  border: 0;
+  color: var(--accent-2);
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.ratio-hint .link-btn:hover { color: var(--text); }
+.ratio-hint .link-btn[hidden] { display: none; }
+
 .source-info {
   margin: 4px 0 2px;
   font-size: 11px;
@@ -740,7 +896,62 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+/* Slow drifting colour behind the landing card. Lives inside .empty-state so it
+   disappears with the landing page the moment an image loads. */
+.landing-bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.landing-blob {
+  position: absolute;
+  width: 48vmax;
+  height: 48vmax;
+  border-radius: 50%;
+  filter: blur(70px);
+  opacity: 0.45;
+  will-change: transform;
+}
+.blob-1 {
+  top: -18%;
+  left: -12%;
+  background: radial-gradient(circle, #2f81f7 0%, rgba(47, 129, 247, 0) 70%);
+  animation: blob-drift-1 34s ease-in-out infinite;
+}
+.blob-2 {
+  bottom: -22%;
+  right: -14%;
+  background: radial-gradient(circle, #f97316 0%, rgba(249, 115, 22, 0) 70%);
+  animation: blob-drift-2 46s ease-in-out infinite;
+}
+.blob-3 {
+  top: 22%;
+  left: 42%;
+  background: radial-gradient(circle, #7c3aed 0%, rgba(124, 58, 237, 0) 70%);
+  animation: blob-drift-3 39s ease-in-out infinite;
+}
+@keyframes blob-drift-1 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(14%, 12%, 0) scale(1.15); }
+}
+@keyframes blob-drift-2 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.1); }
+  50% { transform: translate3d(-16%, -10%, 0) scale(1); }
+}
+@keyframes blob-drift-3 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(0.95); }
+  50% { transform: translate3d(-12%, 14%, 0) scale(1.2); }
+}
+/* Reduced motion stills the drift but keeps the colour — the objection is to movement. */
+@media (prefers-reduced-motion: reduce) {
+  .landing-blob { animation: none; }
+}
+
 .empty-state-content {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   background: var(--panel-2);
   border: 2px dashed var(--border);
   border-radius: 12px;
@@ -752,9 +963,37 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
   width: min(90%, 380px);
   transition: border-color 0.15s, background 0.15s;
 }
+
 .canvas-wrap.drag .empty-state-content {
   border-color: var(--accent);
   background: rgba(47, 129, 247, 0.08);
+}
+
+/* backdrop-filter only samples pixels directly behind its own box, so blurring the card
+   itself leaves the edges visibly unblended. This layer is inset past the card on every
+   side so the blur can pull in surrounding colour, then the card's overflow clips it back
+   to shape. Tint rides on the same layer to keep it out of the stacking order. Declared
+   after the drag rule above so these overrides win. */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .empty-state-content,
+  .canvas-wrap.drag .empty-state-content {
+    background: transparent;
+  }
+  .empty-state-content {
+    border-color: rgba(230, 237, 243, 0.22);
+  }
+  .card-backdrop {
+    position: absolute;
+    inset: -60px;
+    z-index: -1;
+    background: rgba(22, 27, 34, 0.55);
+    -webkit-backdrop-filter: blur(28px) saturate(140%);
+    backdrop-filter: blur(28px) saturate(140%);
+    pointer-events: none;
+  }
+  .canvas-wrap.drag .card-backdrop {
+    background: rgba(47, 129, 247, 0.22);
+  }
 }
 .empty-state-content .brand-logo {
   width: 140px;
@@ -765,11 +1004,9 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
 .empty-state-content .app-title {
   margin: 0;
   padding: 0 0 16px;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 500;
-  color: var(--muted);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  color: var(--text);
   text-align: center;
   border-bottom: 0;
 }

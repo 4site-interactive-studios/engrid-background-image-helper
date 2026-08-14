@@ -1,6 +1,21 @@
 # Background Image Helper
 
-A single-page tool for prepping background images for [ENgrid](https://github.com/4site-interactive-studios/engrid) form layouts. Drop an image in, pick a preset for the campaign, and the app visualizes how the form will sit on top of it across viewports — then exports an optimized WebP ready for upload.
+A single-page tool for prepping images for [ENgrid](https://github.com/4site-interactive-studios/engrid). Drop an image in and export an optimized WebP ready for upload.
+
+## Two modes
+
+A toggle on the landing page (and at the top of the settings panel once an image is loaded) picks the workflow:
+
+- **Background image** (default) — the original workflow. Pick a preset for the campaign and the app visualizes how the form will sit on top of the image across viewports: safe zone, warm bands, focal point, and the matching ENgrid `data-background-position` attribute.
+- **General image** — a plain crop-and-optimize helper with no form to simulate. Everything about safe zones, focal points, and presets is hidden. Instead you get a target width/height, an aspect-ratio dropdown of common ratios (16:9 by default) plus **Free**, and a readout of the actual ratio with a one-click link to snap to the nearest common one.
+
+Target size is specified one of two ways, picked with a toggle so only the relevant controls are on screen: **Aspect ratio** (a dropdown of common ratios, 16:9 by default) or **Dimensions** (exact width/height inputs, up to five digits each). Either way the crop box is locked to the resulting shape; **Free** — available as an entry in the dropdown and as a checkbox under the dimensions — unlocks it for unconstrained dragging. It is one setting reached two ways, so the choice carries across when you switch.
+
+The landing page has a slow drifting colour wash behind a frosted-glass card. The blur layer is inset past the card on every side, because `backdrop-filter` only samples pixels directly behind its own box and would otherwise leave the card's edges visibly unblended ([Josh Comeau's write-up](https://www.joshwcomeau.com/css/backdrop-filter/)). The drift stops under `prefers-reduced-motion: reduce`. A **Retina (2x)** checkbox at the bottom of the Output section — **on by default** — previews the image at half its output dimensions, the size it's meant to occupy on a 2x display, and shows that display size as the row's value. The exported file keeps its full pixel dimensions; only the preview scale changes.
+
+In general mode the preview shows the whole crop rather than a cover fit: it fills the width of the preview area when there's room, is never cropped, is never scaled past 1:1 of its own output pixels (or 0.5:1 with Retina on), and sits centered on black otherwise. The crop preview also carries rule-of-thirds guides for framing. The crop box is locked to the selected ratio (choose **Free** to drag unconstrained), and the output never upscales — a target larger than the cropped region is scaled back down to the pixels actually available. Downloads are suffixed `-optimized` instead of `-bg`.
+
+The mode is remembered in `localStorage` and can be deep-linked with `?mode=general` or `?mode=background`.
 
 ## What it does
 
@@ -89,6 +104,18 @@ The first hex is the sampled image avg, the second is the chosen palette color. 
 
 Append `?src=https://...` to auto-load an image URL on page open. Subject to CORS for cross-origin images (same as paste-URL).
 
+### `?mode=general` / `?mode=background`
+
+Opens the app in the given mode and persists that choice, so a general-image link can be shared directly. Combines with `?src=`.
+
+### Shareable settings links
+
+Changing a setting rewrites the query string in place (`history.replaceState`, no navigation), so the address bar always holds a link that reproduces the current configuration. The image is never part of it — opening such a link lands on the landing page, and the settings apply to the first image the recipient loads.
+
+Parameters written and read back: `mode`, `size` (`aspect`/`dimensions`), `ratio`, `w`/`h`, `retina`, `preset` (plus `layout`, `formwidth`, `safezone` when the preset is custom), `maxres`, and `quality`. `src` and `debug` are preserved rather than overwritten.
+
+`w`/`h`, `maxres`, and `quality` can only take effect once an image exists, so they are held and applied on first load — `applyImage()` would otherwise reset max resolution and quality to their per-image defaults. The sync is cosmetic and fully guarded: browsers that expose no usable `history.replaceState` (some embedded and sandboxed webviews) silently skip it rather than breaking the settings change that triggered it.
+
 ### CMD/Ctrl+click on the upload icon
 
 Opens a "Pick a test image" modal with 10 synthetic test patterns (solid Black/White/Grey/R/G/B, B/W stripes vertical & horizontal, rainbow stripes vertical & horizontal) generated on the fly as 4000×3000 JPEGs. Useful for sanity-checking the safe-zone overlay and the auto-color picker against known inputs.
@@ -118,7 +145,7 @@ Each module import in `app.js` carries a `?v=N` cache buster; bump the relevant 
 
 Two things are stored in `localStorage` under `engrid-bg-viz`:
 
-- **Settings** — preset, form width, safe zone, color mode, etc. Restored on every page load.
+- **Settings** — mode, aspect ratio, Retina, preset, form width, safe zone, color mode, etc. Restored on every page load.
 - **Per-image state** — crop frame, focal point, output dimensions, quality, keyed by a hash of the image bytes. So re-loading the same image restores your prior crop/focal choices. Capped at 50 images (LRU-pruned).
 
 The image bytes themselves are **not** persisted — refreshing the page drops the loaded image and shows the empty state. Use **Clear image** to drop the current image without reloading.

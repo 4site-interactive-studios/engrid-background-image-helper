@@ -30,13 +30,26 @@ export function fitCanvasToContainer(canvas, container) {
   canvas.height = Math.round(h);
 }
 
-export function render({ canvas, image, settings, focal, crop, showSafeZone = true }) {
+export function render({ canvas, image, settings, focal, crop, showSafeZone = true, fitMode = "cover", maxFitScale = 1 }) {
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
 
   const displayCrop = crop || { x: 0, y: 0, w: image.width, h: image.height };
+
+  // Contain fit: show the whole crop, never scaled past 1:1 of its own pixels, centered.
+  // The canvas stays transparent outside the drawn rect so the black .canvas-wrap shows through.
+  if (fitMode === "contain") {
+    const rect = containRect(canvas, displayCrop, maxFitScale);
+    ctx.drawImage(
+      image.bitmap,
+      displayCrop.x, displayCrop.y, displayCrop.w, displayCrop.h,
+      rect.x, rect.y, rect.w, rect.h
+    );
+    return;
+  }
+
   const canvasAspect = canvas.width / canvas.height;
   const cropAspect = displayCrop.w / displayCrop.h;
   const fx = focal ? focal.x : 0.5;
@@ -86,6 +99,40 @@ export function render({ canvas, image, settings, focal, crop, showSafeZone = tr
       effectiveSafeZoneWidth
     );
   }
+}
+
+// Rule-of-thirds framing guides, drawn inside the crop box. A wide dark pass under a
+// thin light one keeps the lines readable over both bright and dark images without
+// competing with the safe zone and focal overlays drawn on top.
+export function drawRuleOfThirds(ctx, rect) {
+  if (rect.w < 24 || rect.h < 24) return;
+
+  ctx.save();
+  ctx.beginPath();
+  for (const t of [1 / 3, 2 / 3]) {
+    const px = Math.round(rect.x + rect.w * t) + 0.5;
+    ctx.moveTo(px, rect.y);
+    ctx.lineTo(px, rect.y + rect.h);
+    const py = Math.round(rect.y + rect.h * t) + 0.5;
+    ctx.moveTo(rect.x, py);
+    ctx.lineTo(rect.x + rect.w, py);
+  }
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.25)";
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.45)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Where a crop lands on the canvas under contain fit. Exported so callers that map
+// pointer/keyboard deltas back to source pixels use the same geometry as the draw.
+export function containRect(canvas, crop, maxScale = 1) {
+  const scale = Math.min(canvas.width / crop.w, canvas.height / crop.h, maxScale);
+  const w = crop.w * scale;
+  const h = crop.h * scale;
+  return { x: (canvas.width - w) / 2, y: (canvas.height - h) / 2, w, h, scale };
 }
 
 export function safeZonePosition(canvasWidth, columnWidthPx, focalX) {

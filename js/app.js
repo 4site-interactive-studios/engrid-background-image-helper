@@ -1,4 +1,4 @@
-import { loadSettings, saveSettings, loadImageState, saveImageState } from "./storage.js?v=34";
+import { loadSettings, saveSettings, loadImageState, saveImageState } from "./storage.js?v=38";
 import {
   loadFromFile,
   loadFromUrl,
@@ -7,8 +7,8 @@ import {
   cropToImageData,
   formatBytes,
 } from "./imagework.js?v=33";
-import { fitCanvasToContainer, render, drawActiveSafeZone, drawFocalSectionCircle, safeZonePosition } from "./overlay.js?v=44";
-import { triggerDownload, suggestFilename } from "./compress.js?v=32";
+import { fitCanvasToContainer, render, drawActiveSafeZone, drawFocalSectionCircle, safeZonePosition, containRect, drawRuleOfThirds } from "./overlay.js?v=47";
+import { triggerDownload, suggestFilename } from "./compress.js?v=33";
 import { encodeWebpInWorker } from "./encode-client.js?v=2";
 
 const $ = (id) => document.getElementById(id);
@@ -25,6 +25,104 @@ const PRESETS = [
   { id: "tpl-left", name: "TPL - Left", layout: "left", formWidth: 768, safeZoneWidth: 350 },
   { id: "wwf-center", name: "WWF - Center", layout: "center", formWidth: 1200, safeZoneWidth: 1200 },
 ];
+
+// General mode is the plain crop/optimize workflow: no form to simulate, so no safe
+// zone, no focal point, and the preview shows the whole crop instead of a cover fit.
+const GENERAL_PANEL_WIDTH = 420;
+
+const ASPECT_RATIOS = [
+  { id: "16:9", w: 16, h: 9 },
+  { id: "3:2", w: 3, h: 2 },
+  { id: "4:3", w: 4, h: 3 },
+  { id: "5:4", w: 5, h: 4 },
+  { id: "1:1", w: 1, h: 1 },
+  { id: "4:5", w: 4, h: 5 },
+  { id: "3:4", w: 3, h: 4 },
+  { id: "2:3", w: 2, h: 3 },
+  { id: "9:16", w: 9, h: 16 },
+  { id: "16:10", w: 16, h: 10 },
+  { id: "21:9", w: 21, h: 9 },
+  { id: "1.91:1", w: 1.91, h: 1 },
+];
+
+function isGeneralMode() {
+  return state.settings.mode === "general";
+}
+
+// Retina: the export keeps its full pixel dimensions, but it is meant to be shown at
+// half those dimensions on a 2x display, so the preview draws it at half scale.
+function isRetina() {
+  return isGeneralMode() && !!state.settings.retina;
+}
+
+function previewFitScale() {
+  return isRetina() ? 0.5 : 1;
+}
+
+function isDimensionsSizeMode() {
+  return state.settings.sizeMode === "dimensions";
+}
+
+// "Free" means the crop box isn't locked to any ratio. It's the same underlying state in
+// both size modes — the aspect dropdown's Free entry and the Dimensions checkbox are two
+// ways to reach it — so switching modes carries the choice across.
+function isFreeCrop() {
+  return state.settings.aspectRatio === "free";
+}
+
+function setFreeCrop(free) {
+  state.settings.aspectRatio = free
+    ? "free"
+    : aspectIdForDims(state.outputW, state.outputH);
+  persistSettings();
+  applySizeModeUi();
+  updateRatioHint();
+  if (state.image) {
+    syncCropUiFromState();
+    rerender();
+  }
+}
+
+function aspectRatioById(id) {
+  return ASPECT_RATIOS.find((r) => r.id === id) || null;
+}
+
+function selectedAspect() {
+  return aspectRatioById(state.settings.aspectRatio);
+}
+
+function gcd(a, b) {
+  return b ? gcd(b, a % b) : a;
+}
+
+function realRatioLabel(w, h) {
+  const d = gcd(Math.round(w), Math.round(h)) || 1;
+  const rw = Math.round(w) / d;
+  const rh = Math.round(h) / d;
+  if (rw > 50 || rh > 50) return `${(w / h).toFixed(2)}:1`;
+  return `${rw}:${rh}`;
+}
+
+// Log-space distance so a ratio and its reciprocal are judged symmetrically —
+// 2:1 is as far from 16:9 as 1:2 is from 9:16.
+function nearestAspectId(w, h) {
+  const target = Math.log(w / h);
+  let best = ASPECT_RATIOS[0];
+  let bestDiff = Infinity;
+  for (const r of ASPECT_RATIOS) {
+    const d = Math.abs(target - Math.log(r.w / r.h));
+    if (d < bestDiff) { best = r; bestDiff = d; }
+  }
+  return best.id;
+}
+
+function aspectIdForDims(w, h) {
+  const ratio = w / h;
+  for (const r of ASPECT_RATIOS) {
+    if (Math.abs(ratio - r.w / r.h) / (r.w / r.h) < 0.005) return r.id;
+  }
+  return "free";
+}
 
 const CLIENT_URL_PATTERNS = [
   {
@@ -296,7 +394,7 @@ function schedulePrecomputeOtherAutoColors(currentFocalX) {
 }
 
 function updateAutoSafeZoneColor() {
-  if (!state.settings.safeZoneAuto || !state.image) return;
+  if (!state.settings.safeZoneAuto || !state.image || isGeneralMode()) return;
   const focalX = effectiveFocal().x;
   const newColor = getAutoColorForFocalX(focalX);
   if (!newColor) return;
@@ -376,6 +474,86 @@ function applyPreset(id) {
   if (modalState.active) renderModal();
 }
 
+function applyModeUi() {
+  const general = isGeneralMode();
+  els.layout.classList.toggle("mode-general", general);
+  for (const toggle of els.modeToggles) {
+    for (const btn of toggle.querySelectorAll(".mode-toggle-btn")) {
+      const active = btn.dataset.mode === state.settings.mode;
+      btn.classList.toggle("is-active", active);
+      btn.setAttribute("aria-checked", active ? "true" : "false");
+    }
+  }
+  if (els.aspectRatio) els.aspectRatio.value = state.settings.aspectRatio || "16:9";
+  if (els.retina) els.retina.checked = !!state.settings.retina;
+  applySizeModeUi();
+  applyLayoutFromSettings();
+  updateFocalAttributeHint();
+  updateRatioHint();
+}
+
+function applySizeModeUi() {
+  const dimensions = isDimensionsSizeMode();
+  els.layout.classList.toggle("size-mode-dimensions", dimensions);
+  els.layout.classList.toggle("size-mode-aspect", !dimensions);
+  // The dropdown's Free entry and the Dimensions checkbox are two views of one setting,
+  // so both are re-synced together whenever either could have changed.
+  if (els.aspectRatio) els.aspectRatio.value = state.settings.aspectRatio;
+  if (els.freeCrop) els.freeCrop.checked = isFreeCrop();
+  if (!els.sizeToggle) return;
+  for (const btn of els.sizeToggle.querySelectorAll(".mode-toggle-btn")) {
+    const active = btn.dataset.sizeMode === state.settings.sizeMode;
+    btn.classList.toggle("is-active", active);
+    btn.setAttribute("aria-checked", active ? "true" : "false");
+  }
+}
+
+function setSizeMode(mode) {
+  if (mode !== "dimensions" && mode !== "aspect") return;
+  if (state.settings.sizeMode === mode) return;
+  state.settings.sizeMode = mode;
+  persistSettings();
+  applySizeModeUi();
+  // Switching to aspect hands the crop back to the selected ratio; switching to
+  // dimensions keeps whatever size is already set, which is what the fields show.
+  if (state.image && mode === "aspect") {
+    applyAspectRatio(state.settings.aspectRatio || "16:9");
+  } else {
+    updateRatioHint();
+  }
+}
+
+function setMode(mode) {
+  if (mode !== "general" && mode !== "background") return;
+  if (state.settings.mode === mode) return;
+  state.settings.mode = mode;
+  persistSettings();
+  applyModeUi();
+  if (!state.image) {
+    rerender();
+    return;
+  }
+  // Each mode has its own idea of a default crop, so switching starts fresh rather
+  // than carrying over a crop shaped by rules that no longer apply.
+  state.hasManualCrop = false;
+  if (isGeneralMode()) {
+    applyAspectRatio(state.settings.aspectRatio || "16:9");
+  } else {
+    state.outputW = state.image.width;
+    state.outputH = state.image.height;
+    state.outputAspect = state.outputW / state.outputH;
+    clampOutputToCap();
+    recomputeCropFromFocal();
+    syncOutputAndQualityToInputs();
+    updateRemoveCropVisibility();
+    updateAutoSafeZoneColor();
+    rerender();
+    if (modalState.active) renderModal();
+    persistImageState();
+    scheduleEstimate();
+  }
+}
+
 function markPresetCustomIfChanged() {
   const matching = matchingPresetId();
   state.settings.preset = matching || "custom";
@@ -411,6 +589,18 @@ const state = {
 
 const els = {
   layout: document.querySelector(".layout"),
+  modeToggles: Array.from(document.querySelectorAll(".mode-toggle")),
+  sizeToggle: $("size-mode-toggle"),
+  freeCrop: $("free-crop"),
+  aspectRatio: $("aspect-ratio"),
+  ratioHint: $("ratio-hint"),
+  ratioReal: $("ratio-real"),
+  ratioMatch: $("ratio-match"),
+  ratioMatchId: $("ratio-match-id"),
+  ratioNearestWrap: $("ratio-nearest-wrap"),
+  ratioNearest: $("ratio-nearest"),
+  retina: $("retina"),
+  displaySize: $("display-size"),
   safeZoneSetting: document.querySelector(".safe-zone-setting"),
   focalPointSetting: document.querySelector(".focal-point-setting"),
   cropFocalSetting: document.querySelector(".crop-focal-setting"),
@@ -495,7 +685,128 @@ function setPreviewLoading(active) {
 
 function persistSettings() {
   saveSettings(state.settings);
+  syncUrlFromState();
   commitHistory();
+}
+
+// The URL carries the configuration but never the image, so a shared link opens on the
+// landing page and only applies these once the recipient loads an image of their own.
+const URL_PASSTHROUGH = ["src", "debug"];
+
+function urlParamsFromState() {
+  const p = new URLSearchParams();
+  const s = state.settings;
+  p.set("mode", s.mode);
+  if (isGeneralMode()) {
+    p.set("size", s.sizeMode);
+    if (isDimensionsSizeMode()) {
+      if (state.image) {
+        p.set("w", String(state.outputW));
+        p.set("h", String(state.outputH));
+      }
+    } else {
+      p.set("ratio", s.aspectRatio);
+    }
+    p.set("retina", s.retina ? "1" : "0");
+  } else {
+    p.set("preset", s.preset);
+    if (!PRESETS.some((preset) => preset.id === s.preset)) {
+      p.set("layout", s.layout);
+      p.set("formwidth", String(s.formWidth));
+      p.set("safezone", String(s.safeZoneWidth));
+    }
+  }
+  p.set("maxres", String(state.maxResolution));
+  p.set("quality", String(state.quality));
+  return p;
+}
+
+// Purely cosmetic, so it must never take a settings change down with it: some embedded
+// and sandboxed browsers expose no usable history.replaceState.
+function syncUrlFromState() {
+  let qs;
+  let currentQs;
+  try {
+    const current = new URLSearchParams(window.location.search);
+    currentQs = current.toString();
+    const next = urlParamsFromState();
+    for (const key of URL_PASSTHROUGH) {
+      const value = current.get(key);
+      if (value != null) next.set(key, value);
+    }
+    qs = next.toString();
+  } catch (err) {
+    if (DEBUG) console.warn("[url] could not build query", err);
+    return;
+  }
+  if (DEBUG) console.log(`[url] ?${qs}`);
+  if (qs === currentQs) return;
+  if (typeof history === "undefined" || typeof history.replaceState !== "function") return;
+  try {
+    history.replaceState(null, "", `${window.location.pathname}?${qs}`);
+  } catch (err) {
+    if (DEBUG) console.warn("[url] replaceState unavailable", err);
+  }
+}
+
+// Values that can only take effect once an image exists wait here; applyImage() otherwise
+// resets max resolution and quality to their per-image defaults.
+const urlDefaults = { w: null, h: null, maxResolution: null, quality: null };
+
+function applyUrlParams(params) {
+  const s = state.settings;
+  const num = (key) => {
+    const n = parseInt(params.get(key), 10);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const mode = params.get("mode");
+  if (mode === "general" || mode === "background") s.mode = mode;
+
+  const size = params.get("size");
+  if (size === "dimensions" || size === "aspect") s.sizeMode = size;
+
+  const ratio = params.get("ratio");
+  if (ratio && (ratio === "free" || aspectRatioById(ratio))) s.aspectRatio = ratio;
+
+  const retina = params.get("retina");
+  if (retina === "0" || retina === "1") s.retina = retina === "1";
+
+  const preset = params.get("preset");
+  if (preset) {
+    const match = PRESETS.find((p) => p.id === preset);
+    s.preset = match ? match.id : "custom";
+    s.presetUserSet = true;
+    if (match) {
+      s.layout = match.layout;
+      s.formWidth = match.formWidth;
+      s.safeZoneWidth = match.safeZoneWidth;
+    }
+  }
+  const layout = params.get("layout");
+  if (layout === "left" || layout === "center" || layout === "right") s.layout = layout;
+  const formWidth = num("formwidth");
+  if (formWidth) s.formWidth = Math.max(100, Math.min(2000, formWidth));
+  const safeZone = num("safezone");
+  if (safeZone) s.safeZoneWidth = Math.max(50, Math.min(2000, safeZone));
+
+  const maxres = num("maxres");
+  if (maxres != null && MAX_RES_PRESETS.some((p) => p.value === maxres)) {
+    urlDefaults.maxResolution = maxres;
+    state.maxResolution = maxres;
+  }
+  const quality = num("quality");
+  if (quality != null) {
+    urlDefaults.quality = snapQualityToPreset(quality);
+    state.quality = urlDefaults.quality;
+  }
+
+  const w = num("w");
+  const h = num("h");
+  if (w && h) {
+    urlDefaults.w = Math.max(1, Math.min(99999, w));
+    urlDefaults.h = Math.max(1, Math.min(99999, h));
+  }
 }
 
 function persistImageState() {
@@ -509,6 +820,7 @@ function persistImageState() {
     quality: state.quality,
     hasManualCrop: state.hasManualCrop,
   });
+  syncUrlFromState();
   commitHistory();
 }
 
@@ -590,6 +902,7 @@ function applyHistorySnapshot(snap) {
   modalState.crop = state.crop ? { ...state.crop } : null;
   modalState.focal = { ...state.focal };
   syncSettingsToInputs();
+  applyModeUi();
   applyLayoutFromSettings();
   applySafeZoneColorVar();
   syncPresetUI();
@@ -597,6 +910,7 @@ function applyHistorySnapshot(snap) {
   updateRemoveCropVisibility();
   highlightFocalPreset();
   updateFocalAttributeHint();
+  updateRatioHint();
   updateAutoSafeZoneColor();
   rerender();
   if (modalState.active) renderModal();
@@ -640,9 +954,13 @@ function syncSettingsToInputs() {
 }
 
 function applyLayoutFromSettings() {
-  document.documentElement.style.setProperty("--form-width", `${state.settings.formWidth}px`);
+  // General mode has no form, so the panel is a fixed width and always sits left;
+  // the same --form-width variable still drives the panel/preview split.
+  const general = isGeneralMode();
+  const panelWidth = general ? GENERAL_PANEL_WIDTH : state.settings.formWidth;
+  document.documentElement.style.setProperty("--form-width", `${panelWidth}px`);
   els.layout.classList.remove("form-pos-left", "form-pos-center", "form-pos-right");
-  els.layout.classList.add(`form-pos-${state.settings.layout}`);
+  els.layout.classList.add(`form-pos-${general ? "left" : state.settings.layout}`);
   updateCenterModeControls();
   highlightFocalPreset();
 }
@@ -652,15 +970,15 @@ function isCenterFormPosition() {
 }
 
 function updateCenterModeControls() {
-  const isCenter = isCenterFormPosition();
-  els.safeZoneSetting.hidden = isCenter;
-  els.focalPointSetting.hidden = isCenter;
-  if (els.cropFocalSetting) els.cropFocalSetting.hidden = isCenter;
+  const hide = isCenterFormPosition() || isGeneralMode();
+  els.safeZoneSetting.hidden = hide;
+  els.focalPointSetting.hidden = hide;
+  if (els.cropFocalSetting) els.cropFocalSetting.hidden = hide;
   updateFocalAttributeHint();
 }
 
 function updateFocalAttributeHint() {
-  if (!state.image) {
+  if (!state.image || isGeneralMode()) {
     els.focalAttributeHint.hidden = true;
     return;
   }
@@ -687,7 +1005,7 @@ function updateFocalAttributeHint() {
 }
 
 function effectiveFocal() {
-  return isCenterFormPosition() ? { x: 0.5, y: 0.5 } : state.focal;
+  return isCenterFormPosition() || isGeneralMode() ? { x: 0.5, y: 0.5 } : state.focal;
 }
 
 function effectiveSafeZoneSettings() {
@@ -875,6 +1193,20 @@ function rerender() {
     ? { x: 0, y: 0, w: state.outputW, h: state.outputH }
     : state.crop;
 
+  if (isGeneralMode()) {
+    render({
+      canvas: els.canvas,
+      image: renderImage,
+      settings: state.settings,
+      focal: { x: 0.5, y: 0.5 },
+      crop: renderCrop,
+      showSafeZone: false,
+      fitMode: "contain",
+      maxFitScale: previewFitScale(),
+    });
+    return;
+  }
+
   const baseSettings = effectiveSafeZoneSettings();
   let renderSettings = baseSettings;
   if (!useCompressed && state.crop && state.outputW > 0 && state.crop.w !== state.outputW) {
@@ -907,6 +1239,103 @@ function recomputeCropFromFocal() {
 
 function fullImageCrop() {
   return { x: 0, y: 0, w: state.image.width, h: state.image.height };
+}
+
+// A typed target is authoritative in general mode, so this only ever shrinks: down to the
+// pixels the crop actually has (never upscale) and down to the max-resolution cap.
+// clampOutputToCap() is deliberately not reused — it also grows the output back up to the
+// cap, which would overwrite whatever size the user asked for.
+function clampOutputToGeneral() {
+  if (!state.image) return;
+  const cropW = state.crop ? state.crop.w : state.image.width;
+  const cropH = state.crop ? state.crop.h : state.image.height;
+  const cap = detailCap();
+  const scale = Math.min(
+    1,
+    cropW / state.outputW,
+    cropH / state.outputH,
+    cap / Math.max(state.outputW, state.outputH)
+  );
+  if (scale < 1) {
+    state.outputW = Math.max(1, Math.round(state.outputW * scale));
+    state.outputH = Math.max(1, Math.round(state.outputH * scale));
+    state.outputAspect = state.outputW / state.outputH;
+  }
+}
+
+// Largest rect of the given aspect that fits the image, centered on the current crop
+// so retyping a dimension nudges the framing instead of jumping back to the middle.
+function refitCropToAspect(aspect) {
+  if (!state.image || !state.crop) return;
+  const cx = state.crop.x + state.crop.w / 2;
+  const cy = state.crop.y + state.crop.h / 2;
+  let w = state.image.width;
+  let h = w / aspect;
+  if (h > state.image.height) {
+    h = state.image.height;
+    w = h * aspect;
+  }
+  state.crop = clampCrop({ x: cx - w / 2, y: cy - h / 2, w, h }, state.image);
+}
+
+function applyAspectRatio(id) {
+  state.settings.aspectRatio = id;
+  persistSettings();
+  applySizeModeUi();
+  if (!state.image) {
+    updateRatioHint();
+    return;
+  }
+  const r = aspectRatioById(id);
+  if (r) {
+    const aspect = r.w / r.h;
+    state.outputH = Math.max(1, Math.round(state.outputW / aspect));
+    state.outputAspect = state.outputW / state.outputH;
+    state.hasManualCrop = false;
+    state.crop = computeCropFromFocalPoint(state.image, { x: 0.5, y: 0.5 }, state.outputW, state.outputH);
+  }
+  clampOutputToGeneral();
+  syncOutputAndQualityToInputs();
+  updateRatioHint();
+  updateRemoveCropVisibility();
+  rerender();
+  syncCropUiFromState();
+  persistImageState();
+  scheduleEstimate();
+}
+
+function updateRatioHint() {
+  updateRetinaHint();
+  if (!els.ratioHint) return;
+  if (!isGeneralMode() || !state.image) {
+    els.ratioHint.hidden = true;
+    return;
+  }
+  els.ratioHint.hidden = false;
+  els.ratioReal.textContent = realRatioLabel(state.outputW, state.outputH);
+  const nearest = nearestAspectId(state.outputW, state.outputH);
+  const exact = aspectIdForDims(state.outputW, state.outputH);
+  // When the dimensions already sit on a common ratio there is nothing to snap to,
+  // so name the match instead of offering a no-op link.
+  if (exact !== "free") {
+    els.ratioMatchId.textContent = exact;
+    els.ratioMatch.hidden = false;
+    els.ratioNearestWrap.hidden = true;
+  } else {
+    els.ratioMatch.hidden = true;
+    els.ratioNearest.textContent = nearest;
+    els.ratioNearest.dataset.ratio = nearest;
+    els.ratioNearestWrap.hidden = false;
+  }
+}
+
+// The display size doubles as the Retina row's value, matching how the Max Resolution
+// and Quality rows show their current setting next to the label.
+function updateRetinaHint() {
+  if (!els.displaySize) return;
+  els.displaySize.textContent = isRetina() && state.image
+    ? `${Math.round(state.outputW / 2).toLocaleString("en-US")} × ${Math.round(state.outputH / 2).toLocaleString("en-US")}`
+    : "";
 }
 
 function clampOutputToCap() {
@@ -982,7 +1411,7 @@ async function applyImage(image) {
   els.metaDims.textContent = `${image.width.toLocaleString("en-US")} × ${image.height.toLocaleString("en-US")}`;
   els.metaSize.textContent = formatBytes(image.byteLength);
 
-  state.maxResolution = 2500;
+  state.maxResolution = urlDefaults.maxResolution ?? 2500;
   state.usingSource = false;
   const saved = loadImageState(image.hash);
   if (saved) {
@@ -1005,7 +1434,7 @@ async function applyImage(image) {
       state.outputW = image.width;
       state.outputH = image.height;
     }
-    state.quality = 55;
+    state.quality = urlDefaults.quality ?? 55;
     state.crop = computeCropFromFocalPoint(image, effectiveFocal(), state.outputW, state.outputH);
   }
 
@@ -1015,9 +1444,40 @@ async function applyImage(image) {
   if (!state.hasManualCrop) {
     state.crop = computeCropFromFocalPoint(image, effectiveFocal(), state.outputW, state.outputH);
   }
+  if (isGeneralMode()) {
+    if (state.hasManualCrop) {
+      // A restored crop defines the ratio; reflect it in the dropdown rather than
+      // overwriting the user's saved framing with the last-used preset.
+      if (!isDimensionsSizeMode() && !isFreeCrop()) {
+        state.settings.aspectRatio = aspectIdForDims(state.outputW, state.outputH);
+        persistSettings();
+        if (els.aspectRatio) els.aspectRatio.value = state.settings.aspectRatio;
+      }
+      clampOutputToGeneral();
+    } else if (isDimensionsSizeMode()) {
+      // A target size carried in the URL applies to the first image that arrives; after
+      // that the current target carries forward, since a fixed size is the point.
+      if (!saved && urlDefaults.w && urlDefaults.h) {
+        state.outputW = urlDefaults.w;
+        state.outputH = urlDefaults.h;
+      }
+      state.outputAspect = state.outputW / state.outputH;
+      refitCropToAspect(state.outputAspect);
+      clampOutputToGeneral();
+    } else {
+      const r = selectedAspect();
+      if (r) {
+        state.outputH = Math.max(1, Math.round(state.outputW / (r.w / r.h)));
+        state.outputAspect = state.outputW / state.outputH;
+        state.crop = computeCropFromFocalPoint(image, { x: 0.5, y: 0.5 }, state.outputW, state.outputH);
+      }
+      clampOutputToGeneral();
+    }
+  }
   syncOutputAndQualityToInputs();
   highlightFocalPreset();
   updateFocalAttributeHint();
+  updateRatioHint();
   els.download.disabled = false;
   els.clearImageRow.hidden = false;
   els.infoBtn.hidden = false;
@@ -1067,14 +1527,17 @@ function handleClearImage() {
   clearError();
   syncOutputAndQualityToInputs();
   highlightFocalPreset();
+  updateRatioHint();
   rerender();
   resetHistory();
 }
 
 async function handleFile(file) {
   clearError();
-  clearClientPresetFilter();
-  applyCustomDefaultIfUnset();
+  if (!isGeneralMode()) {
+    clearClientPresetFilter();
+    applyCustomDefaultIfUnset();
+  }
   const gen = ++loadGeneration;
   try {
     const image = await loadFromFile(file);
@@ -1265,6 +1728,11 @@ let loadGeneration = 0;
 function attemptUrlLoad(url) {
   if (!url || url === lastTriedUrl) return;
   lastTriedUrl = url;
+  // Client presets configure the simulated form, which general mode doesn't have.
+  if (isGeneralMode()) {
+    handleUrl(url);
+    return;
+  }
   const match = clientMatchForUrl(url);
   if (match) {
     applyClientPresetFilter(match.presetIds);
@@ -1470,25 +1938,98 @@ function wireFocalAndCrop() {
     });
   }
 
-  els.outputW.addEventListener("input", () => {
-    state.outputW = clampInt(els.outputW.value, 100, 6000, state.outputW);
-    state.outputH = Math.max(1, Math.round(state.outputW / state.outputAspect));
-    els.outputH.value = state.outputH;
+  // General mode treats width and height as an independent target, so typing one does
+  // not drag the other along; the crop reshapes to whatever ratio the pair implies.
+  const handleOutputDimInput = (axis) => {
+    if (isGeneralMode()) {
+      if (axis === "w") state.outputW = clampInt(els.outputW.value, 1, 99999, state.outputW);
+      else state.outputH = clampInt(els.outputH.value, 1, 99999, state.outputH);
+      state.outputAspect = state.outputW / state.outputH;
+      // A deliberate Free choice outranks the ratio implied by the typed numbers.
+      if (!isFreeCrop()) {
+        state.settings.aspectRatio = aspectIdForDims(state.outputW, state.outputH);
+        if (els.aspectRatio) els.aspectRatio.value = state.settings.aspectRatio;
+      }
+      persistSettings();
+      if (state.image) {
+        refitCropToAspect(state.outputAspect);
+        state.hasManualCrop = false;
+      }
+      updateOutputDimensionLabels();
+      updateOutputMeta();
+      updateRatioHint();
+      updateRemoveCropVisibility();
+      rerender();
+      syncCropUiFromState();
+      persistImageState();
+      scheduleEstimate();
+      return;
+    }
+    if (axis === "w") {
+      state.outputW = clampInt(els.outputW.value, 100, 6000, state.outputW);
+      state.outputH = Math.max(1, Math.round(state.outputW / state.outputAspect));
+      els.outputH.value = state.outputH;
+    } else {
+      state.outputH = clampInt(els.outputH.value, 100, 6000, state.outputH);
+      state.outputW = Math.max(1, Math.round(state.outputH * state.outputAspect));
+      els.outputW.value = state.outputW;
+    }
     updateOutputDimensionLabels();
-      if (state.image) recomputeCropFromFocal();
+    if (state.image) recomputeCropFromFocal();
     rerender();
     persistImageState();
     scheduleEstimate();
-  });
-  els.outputH.addEventListener("input", () => {
-    state.outputH = clampInt(els.outputH.value, 100, 6000, state.outputH);
-    state.outputW = Math.max(1, Math.round(state.outputH * state.outputAspect));
+  };
+
+  els.outputW.addEventListener("input", () => handleOutputDimInput("w"));
+  els.outputH.addEventListener("input", () => handleOutputDimInput("h"));
+  // The no-upscale clamp runs on commit rather than per keystroke: clamping live would
+  // shrink one axis while the user is still typing the other, and the shrunken value
+  // would then become the baseline for the next edit.
+  const commitOutputDims = () => {
+    if (isGeneralMode() && state.image) {
+      clampOutputToGeneral();
+      updateRatioHint();
+      persistImageState();
+      scheduleEstimate();
+    }
     els.outputW.value = state.outputW;
-    updateOutputDimensionLabels();
-      if (state.image) recomputeCropFromFocal();
+    els.outputH.value = state.outputH;
+  };
+  els.outputW.addEventListener("change", commitOutputDims);
+  els.outputH.addEventListener("change", commitOutputDims);
+
+  els.aspectRatio?.addEventListener("change", () => {
+    if (!isGeneralMode()) return;
+    applyAspectRatio(els.aspectRatio.value);
+  });
+
+  els.ratioNearest?.addEventListener("click", () => {
+    const id = els.ratioNearest.dataset.ratio;
+    if (id) applyAspectRatio(id);
+  });
+
+  els.retina?.addEventListener("change", () => {
+    state.settings.retina = els.retina.checked;
+    persistSettings();
+    updateRatioHint();
     rerender();
-    persistImageState();
-    scheduleEstimate();
+  });
+
+  for (const toggle of els.modeToggles) {
+    toggle.addEventListener("click", (e) => {
+      const btn = e.target.closest(".mode-toggle-btn");
+      if (btn) setMode(btn.dataset.mode);
+    });
+  }
+
+  els.sizeToggle?.addEventListener("click", (e) => {
+    const btn = e.target.closest(".mode-toggle-btn");
+    if (btn) setSizeMode(btn.dataset.sizeMode);
+  });
+
+  els.freeCrop?.addEventListener("change", () => {
+    setFreeCrop(els.freeCrop.checked);
   });
 
   els.maxResolution.addEventListener("input", () => {
@@ -1496,7 +2037,16 @@ function wireFocalAndCrop() {
     state.maxResolution = MAX_RES_PRESETS[idx].value;
     updateMaxResolutionDisplay();
     if (!state.image) return;
-    const changed = clampOutputToCap();
+    let changed;
+    if (isGeneralMode()) {
+      const beforeW = state.outputW;
+      const beforeH = state.outputH;
+      clampOutputToGeneral();
+      changed = state.outputW !== beforeW || state.outputH !== beforeH;
+      if (changed) updateRatioHint();
+    } else {
+      changed = clampOutputToCap();
+    }
     if (changed) syncOutputAndQualityToInputs();
     debouncedSliderEffects(() => {
       if (changed && !state.hasManualCrop) recomputeCropFromFocal();
@@ -1518,6 +2068,14 @@ function wireFocalAndCrop() {
     state.outputH = state.crop.h;
     state.outputAspect = state.outputW / state.outputH;
     clampOutputToCap();
+    if (isGeneralMode()) {
+      // Removing the crop hands the framing back to the source image, so the ratio
+      // controls follow the image rather than the ratio that was just discarded.
+      state.settings.aspectRatio = aspectIdForDims(state.outputW, state.outputH);
+      persistSettings();
+      if (els.aspectRatio) els.aspectRatio.value = state.settings.aspectRatio;
+      updateRatioHint();
+    }
     syncOutputAndQualityToInputs();
     updateRemoveCropVisibility();
     rerender();
@@ -1562,6 +2120,10 @@ function applyDrag(drag, dx, dy, aspect) {
   }
 
   return { x, y, w, h };
+}
+
+function downloadSuffix() {
+  return isGeneralMode() ? "-optimized" : "-bg";
 }
 
 function wireCompression() {
@@ -1617,7 +2179,7 @@ function wireCompression() {
     if (state.usingSource) {
       triggerDownload(
         state.image.bytes,
-        suggestFilename(state.image.filename, state.image.mimeType),
+        suggestFilename(state.image.filename, state.image.mimeType, downloadSuffix()),
         state.image.mimeType
       );
       return;
@@ -1625,7 +2187,7 @@ function wireCompression() {
     if (state.encodedBytes) {
       triggerDownload(
         state.encodedBytes,
-        suggestFilename(state.image.filename, "image/webp"),
+        suggestFilename(state.image.filename, "image/webp", downloadSuffix()),
         "image/webp"
       );
       return;
@@ -1638,7 +2200,7 @@ function wireCompression() {
       const bytes = await encodeWebpInWorker(imageData, state.quality);
       state.encodedBytes = bytes;
       state.estimatedBytes = bytes.byteLength;
-      triggerDownload(bytes, suggestFilename(state.image.filename, "image/webp"), "image/webp");
+      triggerDownload(bytes, suggestFilename(state.image.filename, "image/webp", downloadSuffix()), "image/webp");
       updateSizeEstimate();
     } catch (err) {
       showError(`Encoding failed: ${err.message || err}`);
@@ -1817,7 +2379,11 @@ function renderModal() {
     ctx.fillRect(cx + cw, cy, canvas.width - (cx + cw), ch);
     ctx.restore();
 
-    drawModalCropSafeZone(ctx, { x: cx, y: cy, w: cw, h: ch }, s);
+    if (isGeneralMode()) {
+      drawRuleOfThirds(ctx, { x: cx, y: cy, w: cw, h: ch });
+    } else {
+      drawModalCropSafeZone(ctx, { x: cx, y: cy, w: cw, h: ch }, s);
+    }
 
     ctx.save();
     ctx.strokeStyle = "rgba(47, 129, 247, 0.95)";
@@ -1851,8 +2417,10 @@ function updateCropSizeWarning(crop) {
   const outputH = cropModalOutputHeight(crop.w, crop.h);
   const max = Math.max(outputW, outputH);
 
-  const suggestedMinW = Math.round((1920 - (state.settings.formWidth || 0)) / 100) * 100;
-  const suggestedMinH = 1100;
+  // The suggested minimum is derived from the form layout, so it only means something
+  // in background mode; general mode keeps just the "too large" warning.
+  const suggestedMinW = isGeneralMode() ? 0 : Math.round((1920 - (state.settings.formWidth || 0)) / 100) * 100;
+  const suggestedMinH = isGeneralMode() ? 0 : 1100;
 
   if (outputW < suggestedMinW || outputH < suggestedMinH) {
     els.cropSizeWarning.hidden = false;
@@ -2043,6 +2611,32 @@ function modalHitTest(px, py) {
   return null;
 }
 
+// The aspect the crop box is locked to, or null when dragging is unconstrained
+// (background mode, or general mode with the "Free" ratio selected).
+function generalCropAspect() {
+  if (!isGeneralMode()) return null;
+  const r = selectedAspect();
+  return r ? r.w / r.h : null;
+}
+
+// clampCrop() pushes a crop back inside the image, which can flatten the aspect at an
+// edge. Shrink the clamped box back to the locked aspect, keeping its center.
+function constrainToAspect(crop, aspect) {
+  if (!aspect) return crop;
+  const current = crop.w / crop.h;
+  if (Math.abs(current - aspect) / aspect < 0.001) return crop;
+  let w = crop.w;
+  let h = crop.h;
+  if (current > aspect) w = h * aspect;
+  else h = w / aspect;
+  return {
+    x: crop.x + (crop.w - w) / 2,
+    y: crop.y + (crop.h - h) / 2,
+    w,
+    h,
+  };
+}
+
 function applyDragFree(drag, dx, dy) {
   const { handle, startCrop } = drag;
   let { x, y, w, h } = startCrop;
@@ -2071,11 +2665,32 @@ function commitModalCrop() {
     return;
   }
   state.crop = { x: Math.round(c.x), y: Math.round(c.y), w: Math.round(c.w), h: Math.round(c.h) };
-  state.outputW = state.crop.w;
-  state.outputH = state.crop.h;
-  state.outputAspect = state.outputW / state.outputH;
+  // In general mode a typed target survives a re-crop as long as the new crop still has
+  // the same shape and enough pixels; otherwise the crop itself becomes the target.
+  const keepTarget =
+    isGeneralMode() &&
+    Math.abs(state.outputW / state.outputH - state.crop.w / state.crop.h) / (state.crop.w / state.crop.h) < 0.005 &&
+    state.outputW <= state.crop.w &&
+    state.outputH <= state.crop.h;
+  if (!keepTarget) {
+    state.outputW = state.crop.w;
+    state.outputH = state.crop.h;
+    state.outputAspect = state.outputW / state.outputH;
+  }
   state.hasManualCrop = !modalState.removeCrop;
-  clampOutputToCap();
+  if (isGeneralMode()) {
+    clampOutputToGeneral();
+    // "Free" stays free: a free-form drag that happens to land near a common ratio
+    // must not silently re-lock the crop box.
+    if (state.settings.aspectRatio !== "free") {
+      state.settings.aspectRatio = aspectIdForDims(state.outputW, state.outputH);
+      persistSettings();
+      if (els.aspectRatio) els.aspectRatio.value = state.settings.aspectRatio;
+    }
+    updateRatioHint();
+  } else {
+    clampOutputToCap();
+  }
   if (modalState.focal) {
     state.focal = { ...modalState.focal };
   }
@@ -2094,8 +2709,17 @@ function nudgeCropByPreviewPx(dx, dy) {
   const mainW = els.canvas.width;
   const mainH = els.canvas.height;
   if (mainW <= 0 || mainH <= 0) return false;
-  const sourceDx = dx * (state.crop.w / mainW);
-  const sourceDy = dy * (state.crop.h / mainH);
+  // Under contain fit the image occupies only part of the canvas, so a preview pixel
+  // maps to a different number of source pixels than the cover fit's full-width draw.
+  let sourceDx, sourceDy;
+  if (isGeneralMode()) {
+    const { scale } = containRect(els.canvas, state.crop, previewFitScale());
+    sourceDx = dx / scale;
+    sourceDy = dy / scale;
+  } else {
+    sourceDx = dx * (state.crop.w / mainW);
+    sourceDy = dy * (state.crop.h / mainH);
+  }
   let nx = state.crop.x + sourceDx;
   let ny = state.crop.y + sourceDy;
   let nw = state.crop.w;
@@ -2210,27 +2834,38 @@ function wireCropModal() {
       if (!modalState.drag.moved && Math.hypot(dxPx, dyPx) < 3) return;
       modalState.drag.moved = true;
 
+      const lockedAspect = generalCropAspect();
+
       if (modalState.drag.handle === "new") {
         const ix = modalState.drag.startPx / modalState.scale;
         const iy = modalState.drag.startPy / modalState.scale;
         const dxImg = px / modalState.scale - ix;
         const dyImg = py / modalState.scale - iy;
-        modalState.crop = clampCrop(
-          {
-            x: dxImg < 0 ? ix + dxImg : ix,
-            y: dyImg < 0 ? iy + dyImg : iy,
-            w: Math.abs(dxImg),
-            h: Math.abs(dyImg),
-          },
-          state.image
+        let w = Math.abs(dxImg);
+        let h = Math.abs(dyImg);
+        if (lockedAspect) {
+          if (w / h > lockedAspect) w = h * lockedAspect;
+          else h = w / lockedAspect;
+        }
+        modalState.crop = constrainToAspect(
+          clampCrop(
+            {
+              x: dxImg < 0 ? ix - w : ix,
+              y: dyImg < 0 ? iy - h : iy,
+              w,
+              h,
+            },
+            state.image
+          ),
+          lockedAspect
         );
       } else {
         const dx = dxPx / modalState.scale;
         const dy = dyPx / modalState.scale;
-        modalState.crop = clampCrop(
-          applyDragFree(modalState.drag, dx, dy),
-          state.image
-        );
+        const dragged = lockedAspect
+          ? applyDrag(modalState.drag, dx, dy, lockedAspect)
+          : applyDragFree(modalState.drag, dx, dy);
+        modalState.crop = constrainToAspect(clampCrop(dragged, state.image), lockedAspect);
       }
       renderModal();
     });
@@ -2271,7 +2906,13 @@ function wireUndoRedo() {
 }
 
 function init() {
+  const params = new URLSearchParams(window.location.search);
+  applyUrlParams(params);
+  if (!aspectRatioById(state.settings.aspectRatio) && state.settings.aspectRatio !== "free") {
+    state.settings.aspectRatio = "16:9";
+  }
   syncSettingsToInputs();
+  applyModeUi();
   applyLayoutFromSettings();
   applySafeZoneColorVar();
   syncPresetUI();
@@ -2299,7 +2940,7 @@ function init() {
 
   rerender();
 
-  const srcParam = new URLSearchParams(window.location.search).get("src");
+  const srcParam = params.get("src");
   if (srcParam) attemptUrlLoad(srcParam);
 }
 

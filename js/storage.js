@@ -5,6 +5,7 @@ const DEFAULT_SAFE_ZONE_COLOR = "#00FF00";
 
 const DEFAULTS = {
   settings: {
+    mode: "background",
     formWidth: 550,
     layout: "left",
     safeZoneWidth: 350,
@@ -12,6 +13,9 @@ const DEFAULTS = {
     safeZoneAuto: true,
     preset: "ngs-left",
     presetUserSet: false,
+    aspectRatio: "16:9",
+    sizeMode: "aspect",
+    retina: true,
   },
   images: {},
 };

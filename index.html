@@ -8,15 +8,19 @@
   <link rel="icon" href="assets/favicon-192x192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
   <meta name="msapplication-TileImage" content="assets/ms-tile-icon.png" />
-  <link rel="stylesheet" href="css/styles.css?v=48" />
+  <link rel="stylesheet" href="css/styles.css?v=56" />
 </head>
 <body>
   <main class="layout">
     <section class="image-input" aria-label="Image controls">
-      <h1 class="app-title">Background Image Helper</h1>
+      <h1 class="app-title">How can we help?</h1>
+      <div class="mode-toggle mode-toggle-panel" id="mode-toggle-panel" role="radiogroup" aria-label="Mode">
+        <button type="button" class="mode-toggle-btn" data-mode="background" role="radio" aria-checked="true">Background image</button>
+        <button type="button" class="mode-toggle-btn" data-mode="general" role="radio" aria-checked="false">General image</button>
+      </div>
       <fieldset class="form-safezone-fieldset">
         <legend>Settings</legend>
-        <label>
+        <label class="preset-row">
           <span>Preset</span>
           <select id="preset">
             <option value="aiusa-left">AIUSA - Left</option>
@@ -60,6 +64,43 @@
             <button type="button" class="focal-cell" data-fx="1" data-fy="1" aria-label="Right Bottom" title="Right Bottom"></button>
           </div>
         </label>
+        <div class="size-toggle general-only" id="size-mode-toggle" role="radiogroup" aria-label="Crop by">
+          <button type="button" class="mode-toggle-btn" data-size-mode="aspect" role="radio" aria-checked="true">Aspect ratio</button>
+          <button type="button" class="mode-toggle-btn" data-size-mode="dimensions" role="radio" aria-checked="false">Dimensions</button>
+        </div>
+        <div class="row-2 size-dimensions-only">
+          <label>
+            <span id="output-w-label">Width (px)</span>
+            <input type="number" id="output-w" min="1" max="99999" value="1800" />
+          </label>
+          <label>
+            <span id="output-h-label">Height (px)</span>
+            <input type="number" id="output-h" min="1" max="99999" value="1200" />
+          </label>
+        </div>
+        <label class="size-aspect-only aspect-ratio-row">
+          <span>Aspect ratio</span>
+          <select id="aspect-ratio">
+            <option value="16:9" selected>16:9 — Widescreen</option>
+            <option value="3:2">3:2 — Classic photo</option>
+            <option value="4:3">4:3 — Standard</option>
+            <option value="5:4">5:4</option>
+            <option value="1:1">1:1 — Square</option>
+            <option value="4:5">4:5 — Portrait</option>
+            <option value="3:4">3:4 — Portrait</option>
+            <option value="2:3">2:3 — Portrait</option>
+            <option value="9:16">9:16 — Vertical video</option>
+            <option value="16:10">16:10</option>
+            <option value="21:9">21:9 — Ultrawide</option>
+            <option value="1.91:1">1.91:1 — Social card</option>
+            <option value="free">Free</option>
+          </select>
+        </label>
+        <label class="size-dimensions-only free-crop-row">
+          <span>Free</span>
+          <span class="checkbox-wrap"><input type="checkbox" id="free-crop" /></span>
+        </label>
+        <p class="size-dimensions-only ratio-hint" id="ratio-hint" hidden>Actual <code id="ratio-real"></code><span id="ratio-match" hidden> — <code id="ratio-match-id"></code></span><span id="ratio-nearest-wrap" hidden> · nearest <button type="button" id="ratio-nearest" class="link-btn"></button></span></p>
         <div id="crop-inline" class="crop-inline" hidden aria-hidden="true">
           <div class="crop-inline-canvas-wrap">
             <canvas id="modal-canvas" tabindex="0"></canvas>
@@ -81,18 +122,9 @@
           <span class="source-info-line"><span class="source-info-label" id="output-meta-label">Output:</span> <span class="source-info-value"><span id="output-meta-dims"></span> · <span id="output-meta-size"></span><span id="output-meta-compare" class="output-meta-compare"></span></span></span>
           <label class="source-info-line setting-row"><span class="source-info-label">Max Resolution <span class="setting-value" id="max-resolution-val">2,500px</span></span><span class="range-wrap range-wrap-4"><input type="range" id="max-resolution" min="0" max="3" step="1" value="1"></span></label>
           <label class="source-info-line setting-row"><span class="source-info-label">Quality <span class="setting-value" id="quality-val">Balanced</span></span><span class="range-wrap range-wrap-4"><input type="range" id="quality" min="0" max="3" step="1" value="1"></span></label>
+          <label class="source-info-line setting-row general-only"><span class="source-info-label">Retina (2x) <span class="setting-value" id="display-size"></span></span><span class="checkbox-wrap"><input type="checkbox" id="retina" /></span></label>
         </p>
         <p class="compression-warning" id="compression-warning" hidden></p>
-        <div class="row-2" hidden>
-          <label>
-            <span id="output-w-label">Width (px)</span>
-            <input type="number" id="output-w" min="100" max="6000" value="1800" />
-          </label>
-          <label>
-            <span id="output-h-label">Height (px)</span>
-            <input type="number" id="output-h" min="100" max="6000" value="1200" />
-          </label>
-        </div>
 
         <button type="button" id="download" class="primary" disabled>Download optimized WebP</button>
         <p class="clear-image-row" id="clear-image-row" hidden><button type="button" id="clear-image"><svg class="trash-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6.5 1.5h3a1 1 0 0 1 1 1V3H13a.5.5 0 0 1 0 1h-.54l-.65 9.06A2 2 0 0 1 9.81 15H6.19a2 2 0 0 1-1.99-1.94L3.54 4H3a.5.5 0 0 1 0-1h2.5v-.5a1 1 0 0 1 1-1Zm0 1.5V3h3v-.5h-3ZM4.55 4l.64 8.99a1 1 0 0 0 1 .94h3.62a1 1 0 0 0 1-.94L11.45 4h-6.9ZM7 6.5a.5.5 0 0 1 1 0v5a.5.5 0 0 1-1 0v-5Zm2 0a.5.5 0 0 1 1 0v5a.5.5 0 0 1-1 0v-5Z" fill="currentColor"/></svg>Clear image</button></p>
@@ -106,9 +138,19 @@
           <span class="spinner" aria-label="Updating preview"></span>
         </div>
         <div class="empty-state" id="empty-state">
+          <div class="landing-bg" aria-hidden="true">
+            <span class="landing-blob blob-1"></span>
+            <span class="landing-blob blob-2"></span>
+            <span class="landing-blob blob-3"></span>
+          </div>
           <div class="empty-state-content">
+            <span class="card-backdrop" aria-hidden="true"></span>
             <img class="brand-logo" src="assets/4site-logo.png" alt="4Site" draggable="false" />
-            <h1 class="app-title">Background Image Helper</h1>
+            <h1 class="app-title">How can we help?</h1>
+            <div class="mode-toggle" id="mode-toggle" role="radiogroup" aria-label="Mode">
+              <button type="button" class="mode-toggle-btn" data-mode="background" role="radio" aria-checked="true">Background image</button>
+              <button type="button" class="mode-toggle-btn" data-mode="general" role="radio" aria-checked="false">General image</button>
+            </div>
             <button type="button" id="upload-btn" class="dropzone" aria-label="Drop, click, or paste an image">
               <svg class="dropzone-icon" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <rect x="8" y="14" width="48" height="36" rx="4" />
@@ -117,10 +159,15 @@
               </svg>
               <span class="dropzone-text"><strong>Drop</strong>, <strong>click</strong>, or <strong>paste</strong></span>
             </button>
+            <!-- Image URL field, hidden for now but may come back. The JS that drives it
+                 (wireImageInput in js/app.js) guards every reference, so it stays inert
+                 while this is commented out. Pasting a URL anywhere on the page still works.
             <label class="url-row">
               <span class="url-row-label">or paste an image URL</span>
               <input type="url" id="image-url" placeholder="https://example.com/photo.jpg" autocomplete="off" spellcheck="false" />
             </label>
+            -->
+
             <button type="button" id="video-thumb" class="video-thumb" aria-label="Watch overview video">
               <span class="video-thumb-play" aria-hidden="true">▶</span>
               <span class="video-thumb-label">Watch overview</span>
@@ -219,6 +266,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=132"></script>
+  <script type="module" src="js/app.js?v=145"></script>
 </body>
 </html>

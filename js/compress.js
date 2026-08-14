@@ -17,9 +17,9 @@ const MIME_EXT = {
   "image/webp": "webp",
 };
 
-export function suggestFilename(originalName, mimeType) {
+export function suggestFilename(originalName, mimeType, suffix = "-bg") {
   const dot = originalName.lastIndexOf(".");
   const stem = dot > 0 ? originalName.slice(0, dot) : originalName;
   const ext = MIME_EXT[mimeType] || "jpg";
-  return `${stem}-bg.${ext}`;
+  return `${stem}${suffix}.${ext}`;
 }
