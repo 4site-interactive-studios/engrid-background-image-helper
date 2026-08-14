@@ -461,15 +461,29 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
   appearance: textfield;
   -moz-appearance: textfield;
 }
-/* Sits between the two fields, where a lock is conventionally read as binding them. */
+/* Sits between the two fields, where a lock is conventionally read as binding them. The
+   cell mirrors a field's label-over-input structure with an invisible spacer, so the
+   button occupies exactly the input's band and the icon lands on its centre line —
+   no magic offsets to drift when the type sizes change. */
+.crop-lock-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-self: stretch;
+}
+.crop-lock-spacer {
+  font-size: 12px;
+  line-height: 1.45;
+  visibility: hidden;
+}
 .crop-lock {
   display: flex;
+  flex: 1;
   align-items: center;
   justify-content: center;
   width: 28px;
-  height: 30px;
   padding: 0;
-  margin: 0 0 1px;
+  margin: 0;
   background: none;
   border: 0;
   border-radius: 4px;

@@ -8,7 +8,7 @@
   <link rel="icon" href="assets/favicon-192x192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
   <meta name="msapplication-TileImage" content="assets/ms-tile-icon.png" />
-  <link rel="stylesheet" href="css/styles.css?v=61" />
+  <link rel="stylesheet" href="css/styles.css?v=62" />
 </head>
 <body>
   <main class="layout">
@@ -73,6 +73,8 @@
             <span id="output-w-label">Width (px)</span>
             <input type="number" id="output-w" min="1" max="99999" value="1800" />
           </label>
+          <div class="crop-lock-cell">
+            <span class="crop-lock-spacer" aria-hidden="true">&nbsp;</span>
           <button type="button" id="crop-lock" class="crop-lock" aria-pressed="true" title="Crop is locked to these dimensions">
             <svg class="lock-icon lock-closed" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
               <path d="M4.5 7V5a3.5 3.5 0 0 1 7 0v2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -84,6 +86,7 @@
             </svg>
             <span class="sr-only">Lock crop to these dimensions</span>
           </button>
+          </div>
           <label>
             <span id="output-h-label">Height (px)</span>
             <input type="number" id="output-h" min="1" max="99999" value="1200" />
@@ -275,6 +278,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=148"></script>
+  <script type="module" src="js/app.js?v=150"></script>
 </body>
 </html>

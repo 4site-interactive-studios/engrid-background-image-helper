@@ -747,8 +747,10 @@ function urlParamsFromState() {
   return p;
 }
 
-// Purely cosmetic, so it must never take a settings change down with it: some embedded
-// and sandboxed browsers expose no usable history.replaceState.
+// Must go through window.history: this module declares its own `history` const for
+// undo/redo, which shadows the global one for the whole file. A bare history.replaceState
+// here resolves to that object instead, and silently does nothing.
+// Purely cosmetic besides, so a failure must never take the settings change down with it.
 function syncUrlFromState() {
   let qs;
   let currentQs;
@@ -767,9 +769,9 @@ function syncUrlFromState() {
   }
   if (DEBUG) console.log(`[url] ?${qs}`);
   if (qs === currentQs) return;
-  if (typeof history === "undefined" || typeof history.replaceState !== "function") return;
+  if (typeof window.history?.replaceState !== "function") return;
   try {
-    history.replaceState(null, "", `${window.location.pathname}?${qs}`);
+    window.history.replaceState(null, "", `${window.location.pathname}?${qs}`);
   } catch (err) {
     if (DEBUG) console.warn("[url] replaceState unavailable", err);
   }
@@ -1440,7 +1442,11 @@ function clampOutputToCap() {
 
 function updateRemoveCropVisibility() {
   let show = false;
-  if (state.hasManualCrop && state.crop && state.image) {
+  // General mode reaches a crop through the ratio and dimension controls as well as by
+  // dragging, so offer the reset whenever the frame is smaller than the source — gating
+  // on hasManualCrop hid it exactly when a typed size had just cropped the image.
+  const framed = isGeneralMode() ? true : state.hasManualCrop;
+  if (framed && state.crop && state.image) {
     const eps = 1;
     const fullCrop =
       Math.abs(state.crop.x) < eps &&
