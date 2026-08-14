@@ -985,53 +985,64 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
   inset: 0;
   overflow: hidden;
   pointer-events: none;
+  /* Rotating the hue of the whole field is what makes the colour itself read as moving.
+     Position alone is nearly imperceptible under this much blur — the eye has no edge to
+     track — whereas a shifting hue is legible even when nothing appears to move. */
+  animation: landing-hue 24s linear infinite;
 }
 .landing-blob {
   position: absolute;
-  width: 48vmax;
-  height: 48vmax;
+  width: 46vmax;
+  height: 46vmax;
   border-radius: 50%;
-  filter: blur(70px);
-  opacity: 0.45;
-  will-change: transform;
+  filter: blur(64px);
+  opacity: 0.55;
+  will-change: transform, opacity;
 }
 .blob-1 {
   top: -18%;
   left: -12%;
   background: radial-gradient(circle, #2f81f7 0%, rgba(47, 129, 247, 0) 70%);
-  animation: blob-drift-1 28s ease-in-out infinite;
+  animation: blob-drift-1 15s ease-in-out infinite;
 }
 .blob-2 {
   bottom: -22%;
   right: -14%;
   background: radial-gradient(circle, #f97316 0%, rgba(249, 115, 22, 0) 70%);
-  animation: blob-drift-2 36s ease-in-out infinite;
+  animation: blob-drift-2 19s ease-in-out infinite;
 }
 .blob-3 {
   top: 22%;
   left: 42%;
   background: radial-gradient(circle, #7c3aed 0%, rgba(124, 58, 237, 0) 70%);
-  animation: blob-drift-3 32s ease-in-out infinite;
+  animation: blob-drift-3 17s ease-in-out infinite;
 }
 /* Three-stop keyframes so each blob traces a path rather than sliding back along the one
-   it came in on, which reads as drifting instead of oscillating. */
+   it came in on, which reads as drifting instead of oscillating. The travel is a large
+   fraction of each blob's own width because a soft-edged shape has to move a long way
+   before the movement is visible at all. */
 @keyframes blob-drift-1 {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.4; }
-  33% { transform: translate3d(26%, 16%, 0) scale(1.2); opacity: 0.55; }
-  66% { transform: translate3d(12%, 34%, 0) scale(0.95); opacity: 0.42; }
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.45; }
+  33% { transform: translate3d(52%, 30%, 0) scale(1.35); opacity: 0.7; }
+  66% { transform: translate3d(22%, 62%, 0) scale(0.9); opacity: 0.5; }
 }
 @keyframes blob-drift-2 {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1.1); opacity: 0.45; }
-  33% { transform: translate3d(-30%, -14%, 0) scale(0.95); opacity: 0.36; }
-  66% { transform: translate3d(-10%, -32%, 0) scale(1.18); opacity: 0.52; }
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.15); opacity: 0.5; }
+  33% { transform: translate3d(-58%, -26%, 0) scale(0.9); opacity: 0.38; }
+  66% { transform: translate3d(-20%, -60%, 0) scale(1.3); opacity: 0.68; }
 }
 @keyframes blob-drift-3 {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(0.95); opacity: 0.38; }
-  33% { transform: translate3d(-28%, 20%, 0) scale(1.22); opacity: 0.5; }
-  66% { transform: translate3d(-34%, -12%, 0) scale(1.05); opacity: 0.44; }
+  0%, 100% { transform: translate3d(0, 0, 0) scale(0.9); opacity: 0.42; }
+  33% { transform: translate3d(-54%, 38%, 0) scale(1.35); opacity: 0.66; }
+  66% { transform: translate3d(-64%, -24%, 0) scale(1.05); opacity: 0.5; }
 }
-/* Reduced motion stills the drift but keeps the colour — the objection is to movement. */
+@keyframes landing-hue {
+  to { filter: hue-rotate(360deg); }
+}
+/* Reduced motion stills both the drift and the hue shift, leaving the colour field where
+   it started — the objection is to movement, not to the colour being there. */
 @media (prefers-reduced-motion: reduce) {
+  .landing-bg { animation: none; }
   .landing-blob { animation: none; }
 }
 
@@ -1073,13 +1084,20 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
     position: absolute;
     inset: -60px;
     z-index: -1;
-    background: rgba(22, 27, 34, 0.55);
-    -webkit-backdrop-filter: blur(28px) saturate(140%);
-    backdrop-filter: blur(28px) saturate(140%);
+    /* Thin enough that the colour behind reads through as tinted glass — at the old 0.55
+       flat tint the panel was effectively opaque and the field behind it was lost. Graded
+       darker toward the bottom so the smaller text there keeps its contrast. */
+    background: linear-gradient(
+      to bottom,
+      rgba(22, 27, 34, 0.3) 0%,
+      rgba(22, 27, 34, 0.46) 100%
+    );
+    -webkit-backdrop-filter: blur(34px) saturate(190%);
+    backdrop-filter: blur(34px) saturate(190%);
     pointer-events: none;
   }
   .canvas-wrap.drag .card-backdrop {
-    background: rgba(47, 129, 247, 0.22);
+    background: rgba(47, 129, 247, 0.24);
   }
 
   /* Josh Comeau's "glassy edge": a second backdrop layer with less blur and boosted
@@ -1087,15 +1105,21 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
      edge of a thick pane than through its face, and reproducing that — rather than
      drawing a border — is what makes the card read as glass with real thickness. */
   .card-edge {
-    --thickness: 5px;
+    --thickness: 6px;
     position: absolute;
     inset: 0;
     z-index: -1;
     border-radius: 12px;
     padding: var(--thickness);
-    background: hsl(0deg 0% 100% / 0.06);
-    -webkit-backdrop-filter: blur(8px) brightness(155%);
-    backdrop-filter: blur(8px) brightness(155%);
+    /* Brightest along the top rim, where a real pane catches the most light. */
+    background: linear-gradient(
+      to bottom,
+      hsl(0deg 0% 100% / 0.16) 0%,
+      hsl(0deg 0% 100% / 0.05) 55%,
+      hsl(0deg 0% 100% / 0.1) 100%
+    );
+    -webkit-backdrop-filter: blur(6px) brightness(210%) saturate(160%);
+    backdrop-filter: blur(6px) brightness(210%) saturate(160%);
     pointer-events: none;
     /* Two mask layers, the inner one punched out, leaving just the padding ring. */
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
