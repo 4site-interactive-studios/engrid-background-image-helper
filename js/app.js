@@ -1200,9 +1200,25 @@ function updateOutputMeta() {
   updateDownloadLabel();
 }
 
+// Percent the encode differs from the source file; null until an estimate exists.
+function outputSizeDeltaPct() {
+  if (!state.image || state.estimatedBytes == null) return null;
+  if (!state.image.byteLength) return null;
+  return ((state.estimatedBytes - state.image.byteLength) / state.image.byteLength) * 100;
+}
+
 function updateDownloadLabel() {
   if (!els.download) return;
-  els.download.textContent = state.usingSource ? "Download original" : "Download optimized WebP";
+  if (state.usingSource) {
+    els.download.textContent = "Download original";
+    return;
+  }
+  const base = isLossless() ? "Download lossless WebP" : "Download optimized WebP";
+  // Only ever flagged when it grows: a smaller file is the expected outcome and needs no
+  // warning, but trading size for fidelity is worth saying before the click.
+  const pct = outputSizeDeltaPct();
+  const grew = pct != null && Math.round(pct) > 0;
+  els.download.textContent = grew ? `${base} (${Math.round(pct)}% larger)` : base;
 }
 
 function outputIntrinsicDimensions() {
@@ -1422,11 +1438,21 @@ function reportDimClamp(askedW, askedH) {
   dimNoteTimer = setTimeout(() => { els.dimsNote.hidden = true; }, 6000);
 }
 
+// Sits with Source and Output as a third reading of the same file: the size it occupies
+// on screen. Switched off there is no such size to report, hence n/a rather than a blank.
 function updateRetinaHint() {
   if (!els.displaySize) return;
-  els.displaySize.textContent = isRetina() && state.image
-    ? `${Math.round(state.outputW / 2).toLocaleString("en-US")} × ${Math.round(state.outputH / 2).toLocaleString("en-US")}`
-    : "";
+  if (!state.image) {
+    els.displaySize.textContent = "";
+    return;
+  }
+  if (!isRetina()) {
+    els.displaySize.textContent = "n/a";
+    return;
+  }
+  const w = Math.round(state.outputW / 2).toLocaleString("en-US");
+  const h = Math.round(state.outputH / 2).toLocaleString("en-US");
+  els.displaySize.textContent = `${w} × ${h} (retina)`;
 }
 
 function clampOutputToCap() {
@@ -1538,6 +1564,21 @@ async function applyImage(image) {
   clampOutputToCap();
   if (!state.hasManualCrop) {
     state.crop = computeCropFromFocalPoint(image, effectiveFocal(), state.outputW, state.outputH);
+  }
+  // A first look at an image picks the mode that describes it: one already on a common
+  // ratio opens on that ratio, anything else opens on its own dimensions, locked. Images
+  // with saved state keep whatever was chosen for them last time.
+  if (isGeneralMode() && !saved) {
+    const match = aspectIdForDims(image.width, image.height);
+    state.settings.freeCrop = false;
+    if (match !== "free") {
+      state.settings.sizeMode = "aspect";
+      state.settings.aspectRatio = match;
+    } else {
+      state.settings.sizeMode = "dimensions";
+    }
+    persistSettings();
+    applySizeModeUi();
   }
   if (isGeneralMode()) {
     if (state.hasManualCrop) {

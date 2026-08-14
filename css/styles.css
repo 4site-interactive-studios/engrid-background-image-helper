@@ -497,10 +497,29 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
 .crop-lock[aria-pressed="false"] .lock-closed { display: none; }
 .crop-lock[aria-pressed="false"] .lock-open { display: block; }
 
-/* The Retina row's control is a checkbox rather than a slider, so the label keeps the
-   slack — otherwise "Retina Preview (2x)" plus its value wraps against a half-width col. */
-.source-info-line.setting-row.general-only {
-  grid-template-columns: 1fr auto;
+/* Reads as a third info line alongside Source and Output, so it inherits their type and
+   rhythm rather than the slider rows' spacing. The label column sizes to its content
+   because the 48px reserved for "Source:" cannot hold a label plus a checkbox. */
+.layout.mode-general .source-info-line.preview-size-line {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  /* It is a <label>, which otherwise brings its own 13px and 8px block margin — reset to
+     the Source/Output rhythm so the three read as one group. */
+  margin: 0;
+  font-size: inherit;
+}
+.preview-size-line .source-info-label {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+/* Margin rather than flex gap, so the colon stays flush against the checkbox. */
+.preview-size-line input[type="checkbox"] {
+  width: 11px;
+  height: 11px;
+  margin: 0 0 0 5px;
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 
 .dims-note {
@@ -587,14 +606,6 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
 .layout.mode-general .size-toggle.general-only {
   display: grid;
   grid-template-columns: 1fr 1fr;
-}
-
-.checkbox-wrap input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  accent-color: var(--accent);
-  cursor: pointer;
 }
 
 .ratio-hint {

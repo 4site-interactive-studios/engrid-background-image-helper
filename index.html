@@ -8,7 +8,7 @@
   <link rel="icon" href="assets/favicon-192x192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
   <meta name="msapplication-TileImage" content="assets/ms-tile-icon.png" />
-  <link rel="stylesheet" href="css/styles.css?v=62" />
+  <link rel="stylesheet" href="css/styles.css?v=64" />
 </head>
 <body>
   <main class="layout">
@@ -131,9 +131,9 @@
         <p class="source-info" id="source-info" hidden>
           <span class="source-info-line source-info-line-source"><span class="source-info-label">Source:</span> <span class="source-info-value"><span id="meta-dims"></span> · <span id="meta-size"></span></span></span>
           <span class="source-info-line"><span class="source-info-label" id="output-meta-label">Output:</span> <span class="source-info-value"><span id="output-meta-dims"></span> · <span id="output-meta-size"></span><span id="output-meta-compare" class="output-meta-compare"></span></span></span>
+          <label class="source-info-line preview-size-line general-only"><span class="source-info-label">Preview (2x) <input type="checkbox" id="retina" />:</span> <span class="source-info-value" id="display-size"></span></label>
           <label class="source-info-line setting-row"><span class="source-info-label">Max Resolution <span class="setting-value" id="max-resolution-val">2,500px</span></span><span class="range-wrap range-wrap-4"><input type="range" id="max-resolution" min="0" max="3" step="1" value="1"></span></label>
           <label class="source-info-line setting-row"><span class="source-info-label">Quality <span class="setting-value" id="quality-val">Balanced</span></span><span class="range-wrap range-wrap-4"><input type="range" id="quality" min="0" max="3" step="1" value="1"></span></label>
-          <label class="source-info-line setting-row general-only"><span class="source-info-label">Retina Preview (2x) <span class="setting-value" id="display-size"></span></span><span class="checkbox-wrap"><input type="checkbox" id="retina" /></span></label>
         </p>
         <p class="compression-warning" id="compression-warning" hidden></p>
 
@@ -278,6 +278,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=152"></script>
+  <script type="module" src="js/app.js?v=156"></script>
 </body>
 </html>
