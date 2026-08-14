@@ -11,7 +11,7 @@ function rejectAllPending(message) {
 
 function getWorker() {
   if (worker) return worker;
-  worker = new Worker(new URL("./encode-worker.js?v=3", import.meta.url), { type: "module" });
+  worker = new Worker(new URL("./encode-worker.js?v=4", import.meta.url), { type: "module" });
   worker.onmessage = (e) => {
     const { id, ok, bytes, error } = e.data || {};
     const entry = pending.get(id);

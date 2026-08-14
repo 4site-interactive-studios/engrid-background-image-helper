@@ -9,7 +9,7 @@ import {
 } from "./imagework.js?v=33";
 import { fitCanvasToContainer, render, drawActiveSafeZone, drawFocalSectionCircle, safeZonePosition, containRect, drawRuleOfThirds } from "./overlay.js?v=48";
 import { triggerDownload, suggestFilename } from "./compress.js?v=33";
-import { encodeWebpInWorker } from "./encode-client.js?v=3";
+import { encodeWebpInWorker } from "./encode-client.js?v=4";
 
 const $ = (id) => document.getElementById(id);
 const MAX_RECOMMENDED_LONGEST_SIDE = 2000;
@@ -560,7 +560,22 @@ function setMode(mode) {
   // than carrying over a crop shaped by rules that no longer apply.
   state.hasManualCrop = false;
   if (isGeneralMode()) {
-    applyAspectRatio(state.settings.aspectRatio || "16:9");
+    // Only hand the crop back to a ratio when a ratio is what's driving it. In Dimensions
+    // mode, or with the crop deliberately unlocked, applyAspectRatio would reshape the
+    // output and silently re-lock — two settings the user never touched.
+    if (isDimensionsSizeMode() || isFreeCrop()) {
+      refitCropToAspect(state.outputAspect);
+      clampOutputToGeneral();
+      syncOutputAndQualityToInputs();
+      updateRemoveCropVisibility();
+      updateRatioHint();
+      rerender();
+      if (modalState.active) renderModal();
+      persistImageState();
+      scheduleEstimate();
+    } else {
+      applyAspectRatio(state.settings.aspectRatio || "16:9");
+    }
   } else {
     state.outputW = state.image.width;
     state.outputH = state.image.height;
@@ -726,14 +741,17 @@ function urlParamsFromState() {
   const s = state.settings;
   p.set("mode", s.mode);
   if (isGeneralMode()) {
-    p.set("size", s.sizeMode);
-    if (isDimensionsSizeMode()) {
-      if (state.image) {
+    // Framing only travels once there is an image to frame. Publishing it from the landing
+    // page made every reload look like a link that had deliberately stated its framing,
+    // which permanently suppressed the fresh-image guess in applyImage().
+    if (state.image) {
+      p.set("size", s.sizeMode);
+      if (isDimensionsSizeMode()) {
         p.set("w", String(state.outputW));
         p.set("h", String(state.outputH));
+      } else {
+        p.set("ratio", s.aspectRatio);
       }
-    } else {
-      p.set("ratio", s.aspectRatio);
     }
     // Free is orthogonal to the size mode, so it rides along in either.
     if (isFreeCrop()) p.set("free", "1");
@@ -1369,9 +1387,24 @@ function fullImageCrop() {
 // largest W/H-shaped rect inside the image is always at least W x H.
 function clampDimsToSource() {
   if (!state.image) return;
-  const cap = detailCap();
-  state.outputW = Math.max(1, Math.min(state.outputW, state.image.width, cap));
-  state.outputH = Math.max(1, Math.min(state.outputH, state.image.height, cap));
+  // Unlocked, the two axes are independent targets, so each is capped against the source
+  // on its own — that is what stops an over-large width dragging the height down with it.
+  if (isFreeCrop()) {
+    state.outputW = Math.max(1, Math.min(state.outputW, state.image.width));
+    state.outputH = Math.max(1, Math.min(state.outputH, state.image.height));
+  }
+  // The resolution cap governs the longest side, and a locked pair has to keep its ratio,
+  // so both are proportional scales. Applying either per-axis would reshape the output.
+  const scale = Math.min(
+    1,
+    state.image.width / state.outputW,
+    state.image.height / state.outputH,
+    detailCap() / Math.max(state.outputW, state.outputH)
+  );
+  if (scale < 1) {
+    state.outputW = Math.max(1, Math.round(state.outputW * scale));
+    state.outputH = Math.max(1, Math.round(state.outputH * scale));
+  }
   state.outputAspect = state.outputW / state.outputH;
 }
 
@@ -1656,8 +1689,9 @@ async function applyImage(image) {
       }
       clampOutputToGeneral();
     } else if (isDimensionsSizeMode()) {
-      // A target size carried in the URL applies to the first image that arrives; after
-      // that the current target carries forward, since a fixed size is the point.
+      // A target size carried in the URL applies to the first image that arrives and is
+      // then cleared, so later images fall back to their own dimensions rather than being
+      // held to a size the link happened to name.
       if (!saved && urlDefaults.w && urlDefaults.h) {
         state.outputW = urlDefaults.w;
         state.outputH = urlDefaults.h;
@@ -1678,7 +1712,11 @@ async function applyImage(image) {
   // An explicit crop from the link is the whole point of that link, so it lands last and
   // overrides whatever framing the mode would otherwise have derived. Output follows the
   // crop unless the link also named a size.
-  if (!saved && urlCropAppliesToCurrentImage()) {
+  // Deliberately not gated on `saved`: a link states the framing explicitly, so it has to
+  // outrank whatever crop this viewer happened to leave on the same image last time —
+  // otherwise re-sharing a re-crop shows the recipient their own stale rectangle.
+  const appliedUrlCrop = urlCropAppliesToCurrentImage();
+  if (appliedUrlCrop) {
     state.crop = clampCrop(urlDefaults.crop, image);
     state.hasManualCrop = true;
     if (!(isGeneralMode() && isDimensionsSizeMode() && urlDefaults.w && urlDefaults.h)) {
@@ -1705,12 +1743,23 @@ async function applyImage(image) {
   scheduleEstimate();
   activateCropUi();
   resetHistory();
+  // One-shot. These describe the image the link named, not every image dropped after it —
+  // left in place they kept overwriting targets the user had since set by hand.
+  urlDefaults.w = null;
+  urlDefaults.h = null;
+  urlDefaults.quality = null;
+  urlDefaults.maxResolution = null;
+  if (appliedUrlCrop) urlDefaults.crop = null;
   // Last word on the URL: earlier syncs during this load ran before the crop and target
   // size had settled, so they described a frame that no longer exists.
   syncUrlFromState();
 }
 
 function handleClearImage() {
+  // Invalidate any encode still in flight. Every other teardown reaches this via
+  // scheduleEstimate(); without it runEstimate() resumes after its await and dereferences
+  // the image that has just been removed.
+  estimateGeneration++;
   state.image = null;
   state.imageUrl = null;
   state.focal = { x: 0.5, y: 0.5 };
@@ -1806,6 +1855,9 @@ async function handleUrl(url) {
     await applyImage(image);
   } catch (err) {
     if (gen !== loadGeneration) return;
+    // Let the same URL be tried again: the failure may have been a transient blip, and the
+    // duplicate guard would otherwise make every retry a silent no-op.
+    lastTriedUrl = null;
     restoreLandingAfterFailedLoad();
     showError(err.message || String(err));
   }
@@ -2192,6 +2244,11 @@ function wireFocalAndCrop() {
     }
     persistSettings();
     if (state.image) {
+      // Clamp the state now, but leave the field showing what was typed until the commit
+      // rewrites it — that is what keeps typing from being squashed mid-entry. Without
+      // this the estimate below encodes at the raw figure, so a stray 99999 asks for a
+      // multi-gigapixel buffer before anything has a chance to cap it.
+      clampDimsToSource();
       refitCropToAspect(state.outputAspect);
       state.hasManualCrop = false;
     }
@@ -2334,11 +2391,11 @@ function wireFocalAndCrop() {
       rerender();
       if (modalState.active) renderModal();
       updateAutoSafeZoneColor();
-      if (changed || losslessChanged) {
-        persistImageState();
-        scheduleEstimate();
-      }
-    });
+      // The cap is itself part of the saved state, so it persists even when the output
+      // dimensions don't move; only the re-encode is conditional on something changing.
+      persistImageState();
+      if (changed || losslessChanged) scheduleEstimate();
+    }, "maxres");
   });
 
   els.resetCrop.addEventListener("click", () => {
@@ -2389,7 +2446,18 @@ function applyDrag(drag, dx, dy, aspect) {
   if (handle.includes("s")) h += dy;
   if (handle.includes("n")) { y += dy; h -= dy; }
 
-  if (w / h > aspect) {
+  // An edge handle moves one axis only, so the other has to be derived from it. Running
+  // the corner correction here would recompute the axis the user just dragged back to its
+  // starting value, making outward drags a no-op.
+  if (handle === "e" || handle === "w") {
+    const newH = w / aspect;
+    y += (h - newH) / 2;
+    h = newH;
+  } else if (handle === "n" || handle === "s") {
+    const newW = h * aspect;
+    x += (w - newW) / 2;
+    w = newW;
+  } else if (w / h > aspect) {
     const newW = h * aspect;
     if (handle.includes("w")) x = right - newW;
     w = newW;
@@ -2415,7 +2483,7 @@ function wireCompression() {
     debouncedSliderEffects(() => {
       scheduleEstimate();
       persistImageState();
-    });
+    }, "quality");
   });
 
   const setCompareHoverOverlay = (active) => {
@@ -2496,10 +2564,12 @@ let estimateTimer = null;
 let estimateInFlight = false;
 let estimateGeneration = 0;
 
-let sliderEffectsTimer = null;
-function debouncedSliderEffects(fn) {
-  clearTimeout(sliderEffectsTimer);
-  sliderEffectsTimer = setTimeout(fn, 200);
+// Keyed per slider: a single shared timer let a max-resolution nudge cancel the quality
+// change made just before it, leaving the encode stale against the label.
+const sliderEffectsTimers = new Map();
+function debouncedSliderEffects(fn, key = "default") {
+  clearTimeout(sliderEffectsTimers.get(key));
+  sliderEffectsTimers.set(key, setTimeout(fn, 200));
 }
 let scheduleRerenderRaf = 0;
 function scheduleEstimate() {
@@ -2696,8 +2766,11 @@ function updateCropSizeWarning(crop) {
     return;
   }
 
-  const outputW = cropModalOutputWidth(crop.w, crop.h);
-  const outputH = cropModalOutputHeight(crop.w, crop.h);
+  // Background mode always derives the output from the crop, so the two agree there. In
+  // general mode a typed target is independent of the crop, and quoting the crop would
+  // warn about a size the exported file never has.
+  const outputW = isGeneralMode() ? state.outputW : cropModalOutputWidth(crop.w, crop.h);
+  const outputH = isGeneralMode() ? state.outputH : cropModalOutputHeight(crop.w, crop.h);
   const max = Math.max(outputW, outputH);
 
   // The suggested minimum is derived from the form layout, so it only means something
@@ -3014,24 +3087,13 @@ function nudgeCropByPreviewPx(dx, dy) {
   let nh = state.crop.h;
   const MIN_DIM = 20;
 
-  if (nx < 0) {
-    const excess = -nx;
-    nx = 0;
-    nw = Math.max(MIN_DIM, nw - excess);
-  } else if (nx + nw > state.image.width) {
-    const excess = (nx + nw) - state.image.width;
-    nw = Math.max(MIN_DIM, nw - excess);
-    nx = state.image.width - nw;
-  }
-  if (ny < 0) {
-    const excess = -ny;
-    ny = 0;
-    nh = Math.max(MIN_DIM, nh - excess);
-  } else if (ny + nh > state.image.height) {
-    const excess = (ny + nh) - state.image.height;
-    nh = Math.max(MIN_DIM, nh - excess);
-    ny = state.image.height - nh;
-  }
+  // Nudging repositions the crop; it must never resize it. A crop fitted to a ratio
+  // already touches two edges, so trimming on contact would shrink the box on every
+  // press, walking the output off the locked ratio and eventually collapsing it.
+  if (nx < 0) nx = 0;
+  else if (nx + nw > state.image.width) nx = state.image.width - nw;
+  if (ny < 0) ny = 0;
+  else if (ny + nh > state.image.height) ny = state.image.height - nh;
 
   if (nx === state.crop.x && ny === state.crop.y && nw === state.crop.w && nh === state.crop.h) return false;
   const cropResized = nw !== state.crop.w || nh !== state.crop.h;
@@ -3046,6 +3108,7 @@ function nudgeCropByPreviewPx(dx, dy) {
   }
   syncOutputAndQualityToInputs();
   updateRemoveCropVisibility();
+  updateRatioHint();
   updateAutoSafeZoneColor();
   rerender();
   if (modalState.active) renderModal();
@@ -3234,12 +3297,17 @@ function init() {
 
   rerender();
 
-  // Publish the current configuration on load, not just on change, so the landing page
-  // always carries a shareable link — including which mode is selected.
-  syncUrlFromState();
-
   const srcParam = params.get("src");
-  if (srcParam) attemptUrlLoad(srcParam);
+  if (srcParam) {
+    // Leave the incoming link alone until the image settles. Publishing now would write
+    // state that has no image yet, erasing the src and crop before the fetch even starts —
+    // and a load that then fails would have nothing left to retry from.
+    attemptUrlLoad(srcParam);
+  } else {
+    // Publish the current configuration on load, not just on change, so the landing page
+    // always carries a shareable link — including which mode is selected.
+    syncUrlFromState();
+  }
 }
 
 init();

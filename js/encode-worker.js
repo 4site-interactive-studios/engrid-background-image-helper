@@ -2,9 +2,14 @@ let encodePromise = null;
 
 function loadEncoder() {
   if (!encodePromise) {
-    encodePromise = import("https://esm.sh/@jsquash/webp@1?bundle").then(
-      (mod) => mod.encode
-    );
+    encodePromise = import("https://esm.sh/@jsquash/webp@1?bundle")
+      .then((mod) => mod.encode)
+      // Drop the memo on failure. A rejected promise kept here would be handed to every
+      // later encode, so one bad network moment disabled encoding until a page reload.
+      .catch((err) => {
+        encodePromise = null;
+        throw err;
+      });
   }
   return encodePromise;
 }
