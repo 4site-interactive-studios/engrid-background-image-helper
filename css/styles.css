@@ -1080,26 +1080,21 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
   .empty-state-content {
     border-color: rgba(230, 237, 243, 0.22);
   }
+  /* Inverted: the colour lives on the page and the card is a black cut-out of it. Inset by
+     the rim thickness rather than filling the card, so the edge layer above still has the
+     page behind it to sample — at inset 0 this opaque face would be the edge's backdrop
+     and the rim would go dark with it. No backdrop-filter: nothing shows through solid
+     black, so blurring for it would be wasted work. */
   .card-backdrop {
     position: absolute;
-    inset: -60px;
+    inset: 6px;
     z-index: -1;
-    /* The face is pitched at roughly 70% of the rim's intensity: the rim boosts brightness
-       to 210%, so this takes ~145%, and the tint is light enough not to cancel it. Without
-       a brightness boost of its own the face stayed dark however thin the tint got, which
-       is what made the edge look lit and the middle look flat. Still graded darker toward
-       the bottom, where the smaller text needs the contrast. */
-    background: linear-gradient(
-      to bottom,
-      rgba(22, 27, 34, 0.14) 0%,
-      rgba(22, 27, 34, 0.3) 100%
-    );
-    -webkit-backdrop-filter: blur(34px) brightness(145%) saturate(190%);
-    backdrop-filter: blur(34px) brightness(145%) saturate(190%);
+    border-radius: 7px;
+    background: #000;
     pointer-events: none;
   }
   .canvas-wrap.drag .card-backdrop {
-    background: rgba(47, 129, 247, 0.24);
+    background: #061224;
   }
 
   /* Josh Comeau's "glassy edge": a second backdrop layer with less blur and boosted
