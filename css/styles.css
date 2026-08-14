@@ -444,9 +444,10 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
    two-column. Stack each field label-over-input and size the boxes to the five digits
    they accept, then center the pair to match the aspect row below it. */
 .form-safezone-fieldset .row-2 {
-  grid-template-columns: auto auto;
+  grid-template-columns: auto auto auto;
   justify-content: center;
-  gap: 16px;
+  align-items: end;
+  gap: 10px;
 }
 .form-safezone-fieldset .row-2 label {
   display: flex;
@@ -460,6 +461,58 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
   appearance: textfield;
   -moz-appearance: textfield;
 }
+/* Sits between the two fields, where a lock is conventionally read as binding them. */
+.crop-lock {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 30px;
+  padding: 0;
+  margin: 0 0 1px;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.crop-lock:hover { color: var(--text); }
+.crop-lock[aria-pressed="true"] { color: var(--accent-2); }
+.crop-lock .lock-icon { width: 15px; height: 15px; }
+.crop-lock .lock-open { display: none; }
+.crop-lock[aria-pressed="false"] .lock-closed { display: none; }
+.crop-lock[aria-pressed="false"] .lock-open { display: block; }
+
+/* The Retina row's control is a checkbox rather than a slider, so the label keeps the
+   slack — otherwise "Retina Preview (2x)" plus its value wraps against a half-width col. */
+.source-info-line.setting-row.general-only {
+  grid-template-columns: 1fr auto;
+}
+
+.dims-note {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  text-align: center;
+  color: var(--warn);
+}
+.dims-note[hidden] { display: none; }
+
+/* A rejected value is otherwise indistinguishable from one the user typed. */
+@keyframes dim-rejected {
+  0%, 100% { border-color: var(--border); background: var(--panel-2); }
+  15%, 60% { border-color: var(--bad); background: rgba(248, 81, 73, 0.16); }
+}
+.form-safezone-fieldset .row-2 input[type="number"].is-clamped {
+  animation: dim-rejected 1s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .form-safezone-fieldset .row-2 input[type="number"].is-clamped {
+    animation: none;
+    border-color: var(--bad);
+  }
+}
+
 /* Spinners would overlap the digits at this width; arrow-key stepping still works. */
 .form-safezone-fieldset .row-2 input[type="number"]::-webkit-outer-spin-button,
 .form-safezone-fieldset .row-2 input[type="number"]::-webkit-inner-spin-button {
@@ -480,12 +533,16 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
 .layout.mode-general.size-mode-dimensions p.size-dimensions-only {
   display: block;
 }
-.layout.mode-general.size-mode-dimensions .free-crop-row.size-dimensions-only {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin: 10px 0 0;
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 .layout.mode-general.size-mode-dimensions p.size-dimensions-only[hidden] {
   display: none;
@@ -917,31 +974,36 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
   top: -18%;
   left: -12%;
   background: radial-gradient(circle, #2f81f7 0%, rgba(47, 129, 247, 0) 70%);
-  animation: blob-drift-1 34s ease-in-out infinite;
+  animation: blob-drift-1 28s ease-in-out infinite;
 }
 .blob-2 {
   bottom: -22%;
   right: -14%;
   background: radial-gradient(circle, #f97316 0%, rgba(249, 115, 22, 0) 70%);
-  animation: blob-drift-2 46s ease-in-out infinite;
+  animation: blob-drift-2 36s ease-in-out infinite;
 }
 .blob-3 {
   top: 22%;
   left: 42%;
   background: radial-gradient(circle, #7c3aed 0%, rgba(124, 58, 237, 0) 70%);
-  animation: blob-drift-3 39s ease-in-out infinite;
+  animation: blob-drift-3 32s ease-in-out infinite;
 }
+/* Three-stop keyframes so each blob traces a path rather than sliding back along the one
+   it came in on, which reads as drifting instead of oscillating. */
 @keyframes blob-drift-1 {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
-  50% { transform: translate3d(14%, 12%, 0) scale(1.15); }
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.4; }
+  33% { transform: translate3d(26%, 16%, 0) scale(1.2); opacity: 0.55; }
+  66% { transform: translate3d(12%, 34%, 0) scale(0.95); opacity: 0.42; }
 }
 @keyframes blob-drift-2 {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1.1); }
-  50% { transform: translate3d(-16%, -10%, 0) scale(1); }
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.1); opacity: 0.45; }
+  33% { transform: translate3d(-30%, -14%, 0) scale(0.95); opacity: 0.36; }
+  66% { transform: translate3d(-10%, -32%, 0) scale(1.18); opacity: 0.52; }
 }
 @keyframes blob-drift-3 {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(0.95); }
-  50% { transform: translate3d(-12%, 14%, 0) scale(1.2); }
+  0%, 100% { transform: translate3d(0, 0, 0) scale(0.95); opacity: 0.38; }
+  33% { transform: translate3d(-28%, 20%, 0) scale(1.22); opacity: 0.5; }
+  66% { transform: translate3d(-34%, -12%, 0) scale(1.05); opacity: 0.44; }
 }
 /* Reduced motion stills the drift but keeps the colour — the objection is to movement. */
 @media (prefers-reduced-motion: reduce) {
@@ -993,6 +1055,36 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
   }
   .canvas-wrap.drag .card-backdrop {
     background: rgba(47, 129, 247, 0.22);
+  }
+
+  /* Josh Comeau's "glassy edge": a second backdrop layer with less blur and boosted
+     brightness, masked to a thin band around the rim. Light refracts differently at the
+     edge of a thick pane than through its face, and reproducing that — rather than
+     drawing a border — is what makes the card read as glass with real thickness. */
+  .card-edge {
+    --thickness: 5px;
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: 12px;
+    padding: var(--thickness);
+    background: hsl(0deg 0% 100% / 0.06);
+    -webkit-backdrop-filter: blur(8px) brightness(155%);
+    backdrop-filter: blur(8px) brightness(155%);
+    pointer-events: none;
+    /* Two mask layers, the inner one punched out, leaving just the padding ring. */
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  }
+  /* The rim now carries the edge, so the dashed outline can step back to a hairline. */
+  .empty-state-content {
+    border-style: solid;
+    border-width: 1px;
+    border-color: rgba(230, 237, 243, 0.14);
+  }
+  .canvas-wrap.drag .empty-state-content {
+    border-color: var(--accent);
   }
 }
 .empty-state-content .brand-logo {
@@ -1069,13 +1161,13 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); }
 }
 .dropzone-text {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
   letter-spacing: 0.01em;
   margin: 0;
 }
 .dropzone-text strong {
   color: var(--text);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   margin: 0;
 }

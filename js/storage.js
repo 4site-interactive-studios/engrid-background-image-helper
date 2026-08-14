@@ -14,6 +14,7 @@ const DEFAULTS = {
     preset: "ngs-left",
     presetUserSet: false,
     aspectRatio: "16:9",
+    freeCrop: false,
     sizeMode: "aspect",
     retina: true,
   },

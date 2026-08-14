@@ -8,7 +8,7 @@
   <link rel="icon" href="assets/favicon-192x192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
   <meta name="msapplication-TileImage" content="assets/ms-tile-icon.png" />
-  <link rel="stylesheet" href="css/styles.css?v=56" />
+  <link rel="stylesheet" href="css/styles.css?v=61" />
 </head>
 <body>
   <main class="layout">
@@ -73,11 +73,23 @@
             <span id="output-w-label">Width (px)</span>
             <input type="number" id="output-w" min="1" max="99999" value="1800" />
           </label>
+          <button type="button" id="crop-lock" class="crop-lock" aria-pressed="true" title="Crop is locked to these dimensions">
+            <svg class="lock-icon lock-closed" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+              <path d="M4.5 7V5a3.5 3.5 0 0 1 7 0v2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              <rect x="3" y="7" width="10" height="7" rx="1.5" fill="currentColor"/>
+            </svg>
+            <svg class="lock-icon lock-open" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+              <path d="M4.5 7V5a3.5 3.5 0 0 1 6.9-.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              <rect x="3" y="7" width="10" height="7" rx="1.5" fill="currentColor"/>
+            </svg>
+            <span class="sr-only">Lock crop to these dimensions</span>
+          </button>
           <label>
             <span id="output-h-label">Height (px)</span>
             <input type="number" id="output-h" min="1" max="99999" value="1200" />
           </label>
         </div>
+        <p class="size-dimensions-only dims-note" id="dims-note" hidden></p>
         <label class="size-aspect-only aspect-ratio-row">
           <span>Aspect ratio</span>
           <select id="aspect-ratio">
@@ -95,10 +107,6 @@
             <option value="1.91:1">1.91:1 — Social card</option>
             <option value="free">Free</option>
           </select>
-        </label>
-        <label class="size-dimensions-only free-crop-row">
-          <span>Free</span>
-          <span class="checkbox-wrap"><input type="checkbox" id="free-crop" /></span>
         </label>
         <p class="size-dimensions-only ratio-hint" id="ratio-hint" hidden>Actual <code id="ratio-real"></code><span id="ratio-match" hidden> — <code id="ratio-match-id"></code></span><span id="ratio-nearest-wrap" hidden> · nearest <button type="button" id="ratio-nearest" class="link-btn"></button></span></p>
         <div id="crop-inline" class="crop-inline" hidden aria-hidden="true">
@@ -122,7 +130,7 @@
           <span class="source-info-line"><span class="source-info-label" id="output-meta-label">Output:</span> <span class="source-info-value"><span id="output-meta-dims"></span> · <span id="output-meta-size"></span><span id="output-meta-compare" class="output-meta-compare"></span></span></span>
           <label class="source-info-line setting-row"><span class="source-info-label">Max Resolution <span class="setting-value" id="max-resolution-val">2,500px</span></span><span class="range-wrap range-wrap-4"><input type="range" id="max-resolution" min="0" max="3" step="1" value="1"></span></label>
           <label class="source-info-line setting-row"><span class="source-info-label">Quality <span class="setting-value" id="quality-val">Balanced</span></span><span class="range-wrap range-wrap-4"><input type="range" id="quality" min="0" max="3" step="1" value="1"></span></label>
-          <label class="source-info-line setting-row general-only"><span class="source-info-label">Retina (2x) <span class="setting-value" id="display-size"></span></span><span class="checkbox-wrap"><input type="checkbox" id="retina" /></span></label>
+          <label class="source-info-line setting-row general-only"><span class="source-info-label">Retina Preview (2x) <span class="setting-value" id="display-size"></span></span><span class="checkbox-wrap"><input type="checkbox" id="retina" /></span></label>
         </p>
         <p class="compression-warning" id="compression-warning" hidden></p>
 
@@ -145,6 +153,7 @@
           </div>
           <div class="empty-state-content">
             <span class="card-backdrop" aria-hidden="true"></span>
+            <span class="card-edge" aria-hidden="true"></span>
             <img class="brand-logo" src="assets/4site-logo.png" alt="4Site" draggable="false" />
             <h1 class="app-title">How can we help?</h1>
             <div class="mode-toggle" id="mode-toggle" role="radiogroup" aria-label="Mode">
@@ -157,7 +166,7 @@
                 <circle cx="22" cy="26" r="3" fill="currentColor" stroke="none" />
                 <path d="M8 42 L22 30 L34 40 L46 32 L56 38" />
               </svg>
-              <span class="dropzone-text"><strong>Drop</strong>, <strong>click</strong>, or <strong>paste</strong></span>
+              <span class="dropzone-text"><strong>Drag &amp; Drop</strong>, <strong>Click</strong>, <strong>Paste URL</strong>, or <strong>Paste Image</strong></span>
             </button>
             <!-- Image URL field, hidden for now but may come back. The JS that drives it
                  (wireImageInput in js/app.js) guards every reference, so it stays inert
@@ -251,6 +260,7 @@
         <button type="button" class="icon-btn" data-close-test-image aria-label="Close">×</button>
       </header>
       <div class="test-image-grid">
+        <button type="button" class="test-image-option test-image-option-wide" data-test-kind="unsplash"><span class="test-image-thumb thumb-unsplash"></span><span>Random photo (Unsplash)</span></button>
         <button type="button" class="test-image-option" data-test-kind="black"><span class="test-image-thumb thumb-black"></span><span>Black</span></button>
         <button type="button" class="test-image-option" data-test-kind="white"><span class="test-image-thumb thumb-white"></span><span>White</span></button>
         <button type="button" class="test-image-option" data-test-kind="grey"><span class="test-image-thumb thumb-grey"></span><span>Grey</span></button>
@@ -261,11 +271,10 @@
         <button type="button" class="test-image-option" data-test-kind="bw-horizontal"><span class="test-image-thumb thumb-bw-horizontal"></span><span>B/W horizontal stripes</span></button>
         <button type="button" class="test-image-option" data-test-kind="rainbow-vertical"><span class="test-image-thumb thumb-rainbow-vertical"></span><span>Rainbow vertical stripes</span></button>
         <button type="button" class="test-image-option" data-test-kind="rainbow-horizontal"><span class="test-image-thumb thumb-rainbow-horizontal"></span><span>Rainbow horizontal stripes</span></button>
-        <button type="button" class="test-image-option test-image-option-wide" data-test-kind="unsplash"><span class="test-image-thumb thumb-unsplash"></span><span>Random photo (Unsplash)</span></button>
       </div>
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=145"></script>
+  <script type="module" src="js/app.js?v=148"></script>
 </body>
 </html>

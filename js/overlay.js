@@ -101,9 +101,8 @@ export function render({ canvas, image, settings, focal, crop, showSafeZone = tr
   }
 }
 
-// Rule-of-thirds framing guides, drawn inside the crop box. A wide dark pass under a
-// thin light one keeps the lines readable over both bright and dark images without
-// competing with the safe zone and focal overlays drawn on top.
+// Rule-of-thirds framing guides, drawn inside the crop box as single hairlines. The
+// half-pixel offset keeps each one crisp rather than smeared across two device pixels.
 export function drawRuleOfThirds(ctx, rect) {
   if (rect.w < 24 || rect.h < 24) return;
 
@@ -117,10 +116,7 @@ export function drawRuleOfThirds(ctx, rect) {
     ctx.moveTo(rect.x, py);
     ctx.lineTo(rect.x + rect.w, py);
   }
-  ctx.strokeStyle = "rgba(0, 0, 0, 0.25)";
-  ctx.lineWidth = 3;
-  ctx.stroke();
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.45)";
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
   ctx.lineWidth = 1;
   ctx.stroke();
   ctx.restore();

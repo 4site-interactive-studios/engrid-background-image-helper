@@ -1,4 +1,4 @@
-import { loadSettings, saveSettings, loadImageState, saveImageState } from "./storage.js?v=38";
+import { loadSettings, saveSettings, loadImageState, saveImageState } from "./storage.js?v=39";
 import {
   loadFromFile,
   loadFromUrl,
@@ -7,7 +7,7 @@ import {
   cropToImageData,
   formatBytes,
 } from "./imagework.js?v=33";
-import { fitCanvasToContainer, render, drawActiveSafeZone, drawFocalSectionCircle, safeZonePosition, containRect, drawRuleOfThirds } from "./overlay.js?v=47";
+import { fitCanvasToContainer, render, drawActiveSafeZone, drawFocalSectionCircle, safeZonePosition, containRect, drawRuleOfThirds } from "./overlay.js?v=48";
 import { triggerDownload, suggestFilename } from "./compress.js?v=33";
 import { encodeWebpInWorker } from "./encode-client.js?v=2";
 
@@ -63,17 +63,17 @@ function isDimensionsSizeMode() {
   return state.settings.sizeMode === "dimensions";
 }
 
-// "Free" means the crop box isn't locked to any ratio. It's the same underlying state in
-// both size modes — the aspect dropdown's Free entry and the Dimensions checkbox are two
-// ways to reach it — so switching modes carries the choice across.
+// "Free" means the crop box isn't locked to any ratio. It's tracked separately from
+// aspectRatio so that typing dimensions which happen not to match a common ratio can't
+// silently switch it on — only the dropdown's Free entry and the Dimensions checkbox do,
+// and being one flag it carries across a size-mode switch.
 function isFreeCrop() {
-  return state.settings.aspectRatio === "free";
+  return !!state.settings.freeCrop;
 }
 
 function setFreeCrop(free) {
-  state.settings.aspectRatio = free
-    ? "free"
-    : aspectIdForDims(state.outputW, state.outputH);
+  if (state.settings.freeCrop === free) return;
+  state.settings.freeCrop = free;
   persistSettings();
   applySizeModeUi();
   updateRatioHint();
@@ -81,6 +81,14 @@ function setFreeCrop(free) {
     syncCropUiFromState();
     rerender();
   }
+}
+
+// Point the dropdown at whatever ratio the current output matches. Never lands on "free":
+// that is a deliberate choice, not something a set of dimensions can imply.
+function syncAspectFromDims() {
+  const match = aspectIdForDims(state.outputW, state.outputH);
+  if (match !== "free") state.settings.aspectRatio = match;
+  applySizeModeUi();
 }
 
 function aspectRatioById(id) {
@@ -498,8 +506,16 @@ function applySizeModeUi() {
   els.layout.classList.toggle("size-mode-aspect", !dimensions);
   // The dropdown's Free entry and the Dimensions checkbox are two views of one setting,
   // so both are re-synced together whenever either could have changed.
-  if (els.aspectRatio) els.aspectRatio.value = state.settings.aspectRatio;
-  if (els.freeCrop) els.freeCrop.checked = isFreeCrop();
+  if (els.aspectRatio) {
+    els.aspectRatio.value = isFreeCrop() ? "free" : (state.settings.aspectRatio || "16:9");
+  }
+  if (els.cropLock) {
+    const locked = !isFreeCrop();
+    els.cropLock.setAttribute("aria-pressed", locked ? "true" : "false");
+    els.cropLock.title = locked
+      ? "Crop is locked to these dimensions"
+      : "Crop is unlocked — drag any shape";
+  }
   if (!els.sizeToggle) return;
   for (const btn of els.sizeToggle.querySelectorAll(".mode-toggle-btn")) {
     const active = btn.dataset.sizeMode === state.settings.sizeMode;
@@ -512,11 +528,18 @@ function setSizeMode(mode) {
   if (mode !== "dimensions" && mode !== "aspect") return;
   if (state.settings.sizeMode === mode) return;
   state.settings.sizeMode = mode;
+  // Dimensions that already sit exactly on a common ratio pre-select it, rather than
+  // snapping the crop to whatever ratio happened to be chosen last. An explicit Free
+  // choice is left alone — it outranks the ratio the numbers imply.
+  if (mode === "aspect" && !isFreeCrop()) {
+    const match = aspectIdForDims(state.outputW, state.outputH);
+    if (match !== "free") state.settings.aspectRatio = match;
+  }
   persistSettings();
   applySizeModeUi();
   // Switching to aspect hands the crop back to the selected ratio; switching to
   // dimensions keeps whatever size is already set, which is what the fields show.
-  if (state.image && mode === "aspect") {
+  if (state.image && mode === "aspect" && !isFreeCrop()) {
     applyAspectRatio(state.settings.aspectRatio || "16:9");
   } else {
     updateRatioHint();
@@ -591,7 +614,8 @@ const els = {
   layout: document.querySelector(".layout"),
   modeToggles: Array.from(document.querySelectorAll(".mode-toggle")),
   sizeToggle: $("size-mode-toggle"),
-  freeCrop: $("free-crop"),
+  cropLock: $("crop-lock"),
+  dimsNote: $("dims-note"),
   aspectRatio: $("aspect-ratio"),
   ratioHint: $("ratio-hint"),
   ratioReal: $("ratio-real"),
@@ -707,6 +731,8 @@ function urlParamsFromState() {
     } else {
       p.set("ratio", s.aspectRatio);
     }
+    // Free is orthogonal to the size mode, so it rides along in either.
+    if (isFreeCrop()) p.set("free", "1");
     p.set("retina", s.retina ? "1" : "0");
   } else {
     p.set("preset", s.preset);
@@ -767,7 +793,11 @@ function applyUrlParams(params) {
   if (size === "dimensions" || size === "aspect") s.sizeMode = size;
 
   const ratio = params.get("ratio");
-  if (ratio && (ratio === "free" || aspectRatioById(ratio))) s.aspectRatio = ratio;
+  // ratio=free predates the separate flag and still arrives in older shared links.
+  if (ratio === "free") s.freeCrop = true;
+  else if (ratio && aspectRatioById(ratio)) s.aspectRatio = ratio;
+  const free = params.get("free");
+  if (free === "0" || free === "1") s.freeCrop = free === "1";
 
   const retina = params.get("retina");
   if (retina === "0" || retina === "1") s.retina = retina === "1";
@@ -1245,6 +1275,18 @@ function fullImageCrop() {
 // pixels the crop actually has (never upscale) and down to the max-resolution cap.
 // clampOutputToCap() is deliberately not reused — it also grows the output back up to the
 // cap, which would overwrite whatever size the user asked for.
+// Dimensions mode treats the two axes as independent targets, so an over-large width must
+// not drag the height down with it. Capping each axis against the source separately keeps
+// the other one as typed. This still cannot upscale: for W <= imageW and H <= imageH, the
+// largest W/H-shaped rect inside the image is always at least W x H.
+function clampDimsToSource() {
+  if (!state.image) return;
+  const cap = detailCap();
+  state.outputW = Math.max(1, Math.min(state.outputW, state.image.width, cap));
+  state.outputH = Math.max(1, Math.min(state.outputH, state.image.height, cap));
+  state.outputAspect = state.outputW / state.outputH;
+}
+
 function clampOutputToGeneral() {
   if (!state.image) return;
   const cropW = state.crop ? state.crop.w : state.image.width;
@@ -1280,6 +1322,8 @@ function refitCropToAspect(aspect) {
 
 function applyAspectRatio(id) {
   state.settings.aspectRatio = id;
+  // Choosing a concrete ratio is the opposite of choosing Free.
+  state.settings.freeCrop = false;
   persistSettings();
   applySizeModeUi();
   if (!state.image) {
@@ -1331,6 +1375,41 @@ function updateRatioHint() {
 
 // The display size doubles as the Retina row's value, matching how the Max Resolution
 // and Quality rows show their current setting next to the label.
+let dimNoteTimer = null;
+
+// Explain a rejected size rather than just overwriting it. The two reasons are distinct:
+// the source has no more pixels to give, or the max-resolution cap is lower still.
+function reportDimClamp(askedW, askedH) {
+  if (!els.dimsNote) return;
+  const clampedW = state.outputW < askedW;
+  const clampedH = state.outputH < askedH;
+  if (!clampedW && !clampedH) {
+    clearTimeout(dimNoteTimer);
+    els.dimsNote.hidden = true;
+    return;
+  }
+
+  for (const [input, hit] of [[els.outputW, clampedW], [els.outputH, clampedH]]) {
+    if (!input || !hit) continue;
+    input.classList.remove("is-clamped");
+    void input.offsetWidth; // restart the flash if it's already mid-animation
+    input.classList.add("is-clamped");
+  }
+
+  const cap = detailCap();
+  const axis = clampedW && clampedH ? "Width and height" : clampedW ? "Width" : "Height";
+  const to = clampedW && clampedH
+    ? `${state.outputW.toLocaleString("en-US")} × ${state.outputH.toLocaleString("en-US")}`
+    : (clampedW ? state.outputW : state.outputH).toLocaleString("en-US") + " px";
+  const hitCap = cap !== Infinity && Math.max(state.outputW, state.outputH) >= cap - 1;
+  els.dimsNote.textContent = hitCap
+    ? `${axis} capped at ${to} by the ${cap.toLocaleString("en-US")}px max resolution.`
+    : `${axis} capped at ${to} — the source has no more pixels to give.`;
+  els.dimsNote.hidden = false;
+  clearTimeout(dimNoteTimer);
+  dimNoteTimer = setTimeout(() => { els.dimsNote.hidden = true; }, 6000);
+}
+
 function updateRetinaHint() {
   if (!els.displaySize) return;
   els.displaySize.textContent = isRetina() && state.image
@@ -1449,9 +1528,8 @@ async function applyImage(image) {
       // A restored crop defines the ratio; reflect it in the dropdown rather than
       // overwriting the user's saved framing with the last-used preset.
       if (!isDimensionsSizeMode() && !isFreeCrop()) {
-        state.settings.aspectRatio = aspectIdForDims(state.outputW, state.outputH);
+        syncAspectFromDims();
         persistSettings();
-        if (els.aspectRatio) els.aspectRatio.value = state.settings.aspectRatio;
       }
       clampOutputToGeneral();
     } else if (isDimensionsSizeMode()) {
@@ -1945,11 +2023,9 @@ function wireFocalAndCrop() {
       if (axis === "w") state.outputW = clampInt(els.outputW.value, 1, 99999, state.outputW);
       else state.outputH = clampInt(els.outputH.value, 1, 99999, state.outputH);
       state.outputAspect = state.outputW / state.outputH;
-      // A deliberate Free choice outranks the ratio implied by the typed numbers.
-      if (!isFreeCrop()) {
-        state.settings.aspectRatio = aspectIdForDims(state.outputW, state.outputH);
-        if (els.aspectRatio) els.aspectRatio.value = state.settings.aspectRatio;
-      }
+      // Typing here must not touch Free either way: it stays on if chosen, and a size
+      // that matches no common ratio does not turn it on.
+      if (!isFreeCrop()) syncAspectFromDims();
       persistSettings();
       if (state.image) {
         refitCropToAspect(state.outputAspect);
@@ -1988,7 +2064,16 @@ function wireFocalAndCrop() {
   // would then become the baseline for the next edit.
   const commitOutputDims = () => {
     if (isGeneralMode() && state.image) {
+      const askedW = state.outputW;
+      const askedH = state.outputH;
+      clampDimsToSource();
+      if (state.outputW !== askedW || state.outputH !== askedH) {
+        refitCropToAspect(state.outputAspect);
+      }
       clampOutputToGeneral();
+      // Silently rewriting the field reads as the app eating the input, so say what
+      // happened and flash whichever field was actually reduced.
+      reportDimClamp(askedW, askedH);
       updateRatioHint();
       persistImageState();
       scheduleEstimate();
@@ -2001,7 +2086,8 @@ function wireFocalAndCrop() {
 
   els.aspectRatio?.addEventListener("change", () => {
     if (!isGeneralMode()) return;
-    applyAspectRatio(els.aspectRatio.value);
+    if (els.aspectRatio.value === "free") setFreeCrop(true);
+    else applyAspectRatio(els.aspectRatio.value);
   });
 
   els.ratioNearest?.addEventListener("click", () => {
@@ -2028,8 +2114,8 @@ function wireFocalAndCrop() {
     if (btn) setSizeMode(btn.dataset.sizeMode);
   });
 
-  els.freeCrop?.addEventListener("change", () => {
-    setFreeCrop(els.freeCrop.checked);
+  els.cropLock?.addEventListener("click", () => {
+    setFreeCrop(els.cropLock.getAttribute("aria-pressed") === "true");
   });
 
   els.maxResolution.addEventListener("input", () => {
@@ -2071,9 +2157,8 @@ function wireFocalAndCrop() {
     if (isGeneralMode()) {
       // Removing the crop hands the framing back to the source image, so the ratio
       // controls follow the image rather than the ratio that was just discarded.
-      state.settings.aspectRatio = aspectIdForDims(state.outputW, state.outputH);
+      syncAspectFromDims();
       persistSettings();
-      if (els.aspectRatio) els.aspectRatio.value = state.settings.aspectRatio;
       updateRatioHint();
     }
     syncOutputAndQualityToInputs();
@@ -2614,7 +2699,11 @@ function modalHitTest(px, py) {
 // The aspect the crop box is locked to, or null when dragging is unconstrained
 // (background mode, or general mode with the "Free" ratio selected).
 function generalCropAspect() {
-  if (!isGeneralMode()) return null;
+  if (!isGeneralMode() || isFreeCrop()) return null;
+  // In dimensions mode the target size is the constraint, whatever ratio it works out to.
+  if (isDimensionsSizeMode()) {
+    return state.outputH > 0 ? state.outputW / state.outputH : null;
+  }
   const r = selectedAspect();
   return r ? r.w / r.h : null;
 }
@@ -2682,10 +2771,9 @@ function commitModalCrop() {
     clampOutputToGeneral();
     // "Free" stays free: a free-form drag that happens to land near a common ratio
     // must not silently re-lock the crop box.
-    if (state.settings.aspectRatio !== "free") {
-      state.settings.aspectRatio = aspectIdForDims(state.outputW, state.outputH);
+    if (!isFreeCrop()) {
+      syncAspectFromDims();
       persistSettings();
-      if (els.aspectRatio) els.aspectRatio.value = state.settings.aspectRatio;
     }
     updateRatioHint();
   } else {
@@ -2907,8 +2995,14 @@ function wireUndoRedo() {
 
 function init() {
   const params = new URLSearchParams(window.location.search);
+  // Free used to be stored as aspectRatio === "free"; migrate it to the separate flag so
+  // the dropdown always holds a real ratio to fall back to.
+  if (state.settings.aspectRatio === "free") {
+    state.settings.freeCrop = true;
+    state.settings.aspectRatio = "16:9";
+  }
   applyUrlParams(params);
-  if (!aspectRatioById(state.settings.aspectRatio) && state.settings.aspectRatio !== "free") {
+  if (!aspectRatioById(state.settings.aspectRatio)) {
     state.settings.aspectRatio = "16:9";
   }
   syncSettingsToInputs();
@@ -2939,6 +3033,10 @@ function init() {
   ro.observe(els.canvas.parentElement);
 
   rerender();
+
+  // Publish the current configuration on load, not just on change, so the landing page
+  // always carries a shareable link — including which mode is selected.
+  syncUrlFromState();
 
   const srcParam = params.get("src");
   if (srcParam) attemptUrlLoad(srcParam);
