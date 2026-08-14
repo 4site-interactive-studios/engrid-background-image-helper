@@ -15,7 +15,7 @@ Each axis caps independently against the source, so an over-large width leaves t
 
 The landing page has a slow drifting colour wash behind a frosted-glass card, built from [Josh Comeau's backdrop-filter write-up](https://www.joshwcomeau.com/css/backdrop-filter/). Two layers do the work: the blur layer is inset past the card on every side, because `backdrop-filter` only samples pixels directly behind its own box and would otherwise leave the edges visibly unblended; over it sits the **glassy edge**, a second backdrop layer with less blur and boosted brightness, masked to a thin rim so light reads as refracting at the edge of a thick pane rather than through its face. The drift stops under `prefers-reduced-motion: reduce`. A **Preview (2x)** row sits with Source and Output as a third reading of the same file — the size it occupies on screen. **On by default**, it previews the image at half its output dimensions and reports that as `1,200 × 675 (retina)`; switched off it reads `n/a`, since there is then no such size to report. The exported file keeps its full pixel dimensions either way; only the preview scale changes.
 
-The download button names what you'll get — optimized or lossless WebP, or the original — and appends the size delta when the encode comes out *larger* than the source (`Download lossless WebP (436% larger)`). A smaller file is the expected outcome and passes without comment; trading size for fidelity is worth saying before the click.
+The download button names what you'll get — optimized or lossless WebP, or the original — and how the size moved: `Download optimized WebP (78% smaller)`, `Download lossless WebP (132% larger)`. A rounded 0% is left off, since no change is the plain reading there.
 
 In general mode the preview shows the whole crop rather than a cover fit: it fills the width of the preview area when there's room, is never cropped, is never scaled past 1:1 of its own output pixels (or 0.5:1 with Retina on), and sits centered on black otherwise. The crop preview also carries rule-of-thirds guides for framing. The crop box is locked to the selected ratio (choose **Free** to drag unconstrained), and the output never upscales — a target larger than the cropped region is scaled back down to the pixels actually available. Downloads are suffixed `-optimized` instead of `-bg`.
 
@@ -114,11 +114,15 @@ Opens the app in the given mode and persists that choice, so a general-image lin
 
 ### Shareable settings links
 
-Changing a setting rewrites the query string in place (`history.replaceState`, no navigation), so the address bar always holds a link that reproduces the current configuration. The image is never part of it — opening such a link lands on the landing page, and the settings apply to the first image the recipient loads.
+Changing a setting rewrites the query string in place (`history.replaceState`, no navigation), so the address bar always holds a link that reproduces the current view.
 
-Parameters written and read back: `mode`, `size` (`aspect`/`dimensions`), `ratio`, `w`/`h`, `retina`, `preset` (plus `layout`, `formwidth`, `safezone` when the preset is custom), `maxres`, and `quality`. `src` and `debug` are preserved rather than overwritten.
+When the image itself came from a link — pasted, or arriving via `?src=` — it travels too, along with the crop rectangle, so the recipient opens on the same image framed the same way. Local files can't be re-fetched by anyone else, so those links carry only the settings and open on the landing page, applying them to whatever the recipient loads.
 
-`w`/`h`, `maxres`, and `quality` can only take effect once an image exists, so they are held and applied on first load — `applyImage()` would otherwise reset max resolution and quality to their per-image defaults. The sync is cosmetic and fully guarded, so a failure can never break the settings change that triggered it. Note it must call `window.history.replaceState` explicitly: `js/app.js` declares its own `const history` for undo/redo, which shadows the global for the whole module, and a bare `history.replaceState` there silently resolves to that object instead.
+Parameters written and read back: `src`, `crop` (`x,y,w,h` in source-image pixels), `focal` (background mode, where it places the safe zone), `mode`, `size` (`aspect`/`dimensions`), `ratio`, `free`, `w`/`h`, `retina`, `preset` (plus `layout`, `formwidth`, `safezone` when the preset is custom), `maxres`, and `quality`. `debug` is preserved rather than overwritten.
+
+`src` is written from state rather than passed through, so replacing the image replaces the link instead of stranding the previous one.
+
+`w`/`h`, `crop`, `focal`, `maxres`, and `quality` can only take effect once an image exists, so they are held and applied on first load — `applyImage()` would otherwise reset max resolution and quality to their per-image defaults. The crop lands last and overrides whatever framing the mode would have derived, since reproducing it is the point of the link. Because those values settle late, `applyImage()` re-syncs the URL when it finishes; syncs earlier in the same load describe a frame that no longer exists. The sync is cosmetic and fully guarded, so a failure can never break the settings change that triggered it. Note it must call `window.history.replaceState` explicitly: `js/app.js` declares its own `const history` for undo/redo, which shadows the global for the whole module, and a bare `history.replaceState` there silently resolves to that object instead.
 
 ### CMD/Ctrl+click on the upload icon
 

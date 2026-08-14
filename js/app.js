@@ -608,6 +608,7 @@ const state = {
   usingSource: false,
   encodedBytes: null,
   autoColorCache: null,
+  imageUrl: null,
 };
 
 const els = {
@@ -713,9 +714,12 @@ function persistSettings() {
   commitHistory();
 }
 
-// The URL carries the configuration but never the image, so a shared link opens on the
-// landing page and only applies these once the recipient loads an image of their own.
-const URL_PASSTHROUGH = ["src", "debug"];
+// The URL carries the configuration, and the image too when it came from a link — a
+// pasted or ?src= image is re-fetchable by anyone, so the whole view travels. Local files
+// cannot, so those links open on the landing page and apply the settings to whatever the
+// recipient loads. src is written from state rather than passed through, so replacing the
+// image replaces the link instead of stranding the previous one.
+const URL_PASSTHROUGH = ["debug"];
 
 function urlParamsFromState() {
   const p = new URLSearchParams();
@@ -744,6 +748,21 @@ function urlParamsFromState() {
   }
   p.set("maxres", String(state.maxResolution));
   p.set("quality", String(state.quality));
+  // The focal point places the safe zone, so a background-mode link needs it to show the
+  // recipient the same thing. General mode always frames from the centre.
+  if (!isGeneralMode() && state.focal) {
+    p.set("focal", `${state.focal.x},${state.focal.y}`);
+  }
+  // Crop is in source-image pixels, so it lands identically on the same image. Omitted
+  // when it is the whole frame, which is the default anyway.
+  const c = state.crop;
+  if (state.image && c) {
+    const r = [c.x, c.y, c.w, c.h].map(Math.round);
+    const isFull = r[0] === 0 && r[1] === 0 &&
+      r[2] === state.image.width && r[3] === state.image.height;
+    if (!isFull) p.set("crop", r.join(","));
+  }
+  if (state.imageUrl) p.set("src", state.imageUrl);
   return p;
 }
 
@@ -779,7 +798,7 @@ function syncUrlFromState() {
 
 // Values that can only take effect once an image exists wait here; applyImage() otherwise
 // resets max resolution and quality to their per-image defaults.
-const urlDefaults = { w: null, h: null, maxResolution: null, quality: null };
+const urlDefaults = { w: null, h: null, maxResolution: null, quality: null, crop: null, focal: null };
 
 function applyUrlParams(params) {
   const s = state.settings;
@@ -838,6 +857,17 @@ function applyUrlParams(params) {
   if (w && h) {
     urlDefaults.w = Math.max(1, Math.min(99999, w));
     urlDefaults.h = Math.max(1, Math.min(99999, h));
+  }
+
+  const focal = (params.get("focal") || "").split(",").map(Number);
+  if (focal.length === 2 && focal.every((v) => Number.isFinite(v) && v >= 0 && v <= 1)) {
+    urlDefaults.focal = { x: focal[0], y: focal[1] };
+  }
+
+  // Held until an image exists — the rect is meaningless without one to clamp it against.
+  const crop = (params.get("crop") || "").split(",").map(Number);
+  if (crop.length === 4 && crop.every((v) => Number.isFinite(v)) && crop[2] > 0 && crop[3] > 0) {
+    urlDefaults.crop = { x: crop[0], y: crop[1], w: crop[2], h: crop[3] };
   }
 }
 
@@ -1214,11 +1244,15 @@ function updateDownloadLabel() {
     return;
   }
   const base = isLossless() ? "Download lossless WebP" : "Download optimized WebP";
-  // Only ever flagged when it grows: a smaller file is the expected outcome and needs no
-  // warning, but trading size for fidelity is worth saying before the click.
+  // Says which way the size went before the click. A rounded 0% is not worth saying —
+  // "0% smaller" reads as noise where no change is the plain reading.
   const pct = outputSizeDeltaPct();
-  const grew = pct != null && Math.round(pct) > 0;
-  els.download.textContent = grew ? `${base} (${Math.round(pct)}% larger)` : base;
+  const rounded = pct == null ? 0 : Math.round(pct);
+  if (rounded === 0) {
+    els.download.textContent = base;
+    return;
+  }
+  els.download.textContent = `${base} (${Math.abs(rounded)}% ${rounded > 0 ? "larger" : "smaller"})`;
 }
 
 function outputIntrinsicDimensions() {
@@ -1559,6 +1593,10 @@ async function applyImage(image) {
     state.crop = computeCropFromFocalPoint(image, effectiveFocal(), state.outputW, state.outputH);
   }
 
+  // Set before the crop is derived below, since the focal point is what positions it.
+  if (!saved && urlDefaults.focal) {
+    state.focal = snapFocalToPreset(urlDefaults.focal);
+  }
   state.outputAspect = state.outputW / state.outputH;
   updateMaxResolutionDisplay();
   clampOutputToCap();
@@ -1609,6 +1647,20 @@ async function applyImage(image) {
       clampOutputToGeneral();
     }
   }
+  // An explicit crop from the link is the whole point of that link, so it lands last and
+  // overrides whatever framing the mode would otherwise have derived. Output follows the
+  // crop unless the link also named a size.
+  if (!saved && urlDefaults.crop) {
+    state.crop = clampCrop(urlDefaults.crop, image);
+    state.hasManualCrop = true;
+    if (!(isGeneralMode() && isDimensionsSizeMode() && urlDefaults.w && urlDefaults.h)) {
+      state.outputW = Math.round(state.crop.w);
+      state.outputH = Math.round(state.crop.h);
+      state.outputAspect = state.outputW / state.outputH;
+    }
+    if (isGeneralMode()) clampOutputToGeneral();
+    else clampOutputToCap();
+  }
   syncOutputAndQualityToInputs();
   highlightFocalPreset();
   updateFocalAttributeHint();
@@ -1625,10 +1677,14 @@ async function applyImage(image) {
   scheduleEstimate();
   activateCropUi();
   resetHistory();
+  // Last word on the URL: earlier syncs during this load ran before the crop and target
+  // size had settled, so they described a frame that no longer exists.
+  syncUrlFromState();
 }
 
 function handleClearImage() {
   state.image = null;
+  state.imageUrl = null;
   state.focal = { x: 0.5, y: 0.5 };
   state.crop = null;
   state.outputW = 1800;
@@ -1677,6 +1733,9 @@ async function handleFile(file) {
   try {
     const image = await loadFromFile(file);
     if (gen !== loadGeneration) return;
+    // Local bytes can't be linked to, so the previous src must not linger in the URL.
+    state.imageUrl = null;
+    lastTriedUrl = null;
     await applyImage(image);
   } catch (err) {
     if (gen !== loadGeneration) return;
@@ -1863,6 +1922,9 @@ let loadGeneration = 0;
 function attemptUrlLoad(url) {
   if (!url || url === lastTriedUrl) return;
   lastTriedUrl = url;
+  // Recorded up front rather than on success, so the address bar keeps the link the user
+  // actually asked for even while it is still loading.
+  state.imageUrl = url;
   // Client presets configure the simulated form, which general mode doesn't have.
   if (isGeneralMode()) {
     handleUrl(url);
@@ -2073,29 +2135,67 @@ function wireFocalAndCrop() {
     });
   }
 
-  // General mode treats width and height as an independent target, so typing one does
-  // not drag the other along; the crop reshapes to whatever ratio the pair implies.
-  const handleOutputDimInput = (axis) => {
-    if (isGeneralMode()) {
+  // Locked links the pair: typing one axis drives the other so the ratio survives the
+  // edit. Unlocked leaves them independent and the crop reshapes to whatever they imply.
+  const applyGeneralDimEdit = (axis) => {
+    if (!isGeneralMode()) return;
+    if (isFreeCrop()) {
       if (axis === "w") state.outputW = clampInt(els.outputW.value, 1, 99999, state.outputW);
       else state.outputH = clampInt(els.outputH.value, 1, 99999, state.outputH);
       state.outputAspect = state.outputW / state.outputH;
-      // Typing here must not touch Free either way: it stays on if chosen, and a size
-      // that matches no common ratio does not turn it on.
-      if (!isFreeCrop()) syncAspectFromDims();
-      persistSettings();
-      if (state.image) {
-        refitCropToAspect(state.outputAspect);
-        state.hasManualCrop = false;
+    } else {
+      // Read the ratio before the edit and hold it, rather than recomputing from the pair
+      // afterwards — recomputing would let rounding walk the ratio a little each keystroke.
+      const aspect = state.outputAspect > 0 ? state.outputAspect : 1;
+      if (axis === "w") {
+        state.outputW = clampInt(els.outputW.value, 1, 99999, state.outputW);
+        state.outputH = Math.max(1, Math.round(state.outputW / aspect));
+        els.outputH.value = state.outputH;
+      } else {
+        state.outputH = clampInt(els.outputH.value, 1, 99999, state.outputH);
+        state.outputW = Math.max(1, Math.round(state.outputH * aspect));
+        els.outputW.value = state.outputW;
       }
-      updateOutputDimensionLabels();
-      updateOutputMeta();
-      updateRatioHint();
-      updateRemoveCropVisibility();
-      rerender();
-      syncCropUiFromState();
-      persistImageState();
-      scheduleEstimate();
+      syncAspectFromDims();
+    }
+    persistSettings();
+    if (state.image) {
+      refitCropToAspect(state.outputAspect);
+      state.hasManualCrop = false;
+    }
+    updateOutputDimensionLabels();
+    updateOutputMeta();
+    updateRatioHint();
+    updateRemoveCropVisibility();
+    rerender();
+    syncCropUiFromState();
+    persistImageState();
+    scheduleEstimate();
+  };
+
+  // Just long enough that the linked axis waits for a pause instead of recomputing from
+  // "1" then "12" then "128" as the digits land.
+  const DIM_EDIT_DEBOUNCE = 250;
+  let dimEditTimer = null;
+  let dimEditAxis = null;
+  const flushDimEdit = () => {
+    if (!dimEditTimer) return;
+    clearTimeout(dimEditTimer);
+    dimEditTimer = null;
+    const axis = dimEditAxis;
+    dimEditAxis = null;
+    applyGeneralDimEdit(axis);
+  };
+
+  const handleOutputDimInput = (axis) => {
+    if (isGeneralMode()) {
+      clearTimeout(dimEditTimer);
+      dimEditAxis = axis;
+      dimEditTimer = setTimeout(() => {
+        dimEditTimer = null;
+        dimEditAxis = null;
+        applyGeneralDimEdit(axis);
+      }, DIM_EDIT_DEBOUNCE);
       return;
     }
     if (axis === "w") {
@@ -2120,6 +2220,8 @@ function wireFocalAndCrop() {
   // shrink one axis while the user is still typing the other, and the shrunken value
   // would then become the baseline for the next edit.
   const commitOutputDims = () => {
+    // Blur can beat the debounce, so settle any pending edit before clamping it.
+    flushDimEdit();
     if (isGeneralMode() && state.image) {
       const askedW = state.outputW;
       const askedH = state.outputH;
