@@ -799,7 +799,7 @@ function syncUrlFromState() {
 
 // Values that can only take effect once an image exists wait here; applyImage() otherwise
 // resets max resolution and quality to their per-image defaults.
-const urlDefaults = { w: null, h: null, maxResolution: null, quality: null, crop: null, focal: null, src: null };
+const urlDefaults = { w: null, h: null, maxResolution: null, quality: null, crop: null, focal: null, src: null, framingFromUrl: false };
 
 function applyUrlParams(params) {
   const s = state.settings;
@@ -813,6 +813,10 @@ function applyUrlParams(params) {
 
   const size = params.get("size");
   if (size === "dimensions" || size === "aspect") s.sizeMode = size;
+  // Any of these is the link stating how it wants the image framed, which outranks the
+  // guess applyImage() would otherwise make from the image's own proportions.
+  urlDefaults.framingFromUrl =
+    params.has("size") || params.has("ratio") || (params.has("w") && params.has("h"));
 
   const ratio = params.get("ratio");
   // ratio=free predates the separate flag and still arrives in older shared links.
@@ -1614,9 +1618,11 @@ async function applyImage(image) {
     state.crop = computeCropFromFocalPoint(image, effectiveFocal(), state.outputW, state.outputH);
   }
   // A first look at an image picks the mode that describes it: one already on a common
-  // ratio opens on that ratio, anything else opens on its own dimensions, locked. Images
-  // with saved state keep whatever was chosen for them last time.
-  if (isGeneralMode() && !saved) {
+  // ratio opens on that ratio, anything else opens on its own dimensions, locked. Only a
+  // guess, so it yields to anything that actually stated the framing — a link that named
+  // it, or saved state from working on this image before. A source whose own proportions
+  // happen to sit near a common ratio would otherwise silently overrule a shared link.
+  if (isGeneralMode() && !saved && !urlDefaults.framingFromUrl) {
     const match = aspectIdForDims(image.width, image.height);
     state.settings.freeCrop = false;
     if (match !== "free") {
